@@ -1,5 +1,8 @@
 tests-out/
-# *
+*
+# why this can't include all *.c in subdirectories. See https://stackoverflow.com/a/44568924/21294350
+# 1st include all subdirs, then files in these dirs.
+!**/
 !*.c
 # why this can't include all *.c in subdirectories.
 !**/**/*.c

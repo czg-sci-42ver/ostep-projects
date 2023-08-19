@@ -22,7 +22,7 @@ main(int argc, char *argv[])
 
         int count = 0;
         while (fread(&count, 4, 1, fp)) {
-            count = ntohl(count);    // read from network byte order
+            // count = ntohl(count);    // read from network byte order
             memset(buff, 0, strlen(buff));
             fread(buff, 1, 1, fp);
             for (size_t i = 0; i < count; i++) {

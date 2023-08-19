@@ -15,6 +15,9 @@ writeFile(int count, char *oldBuff)
     // count = htonl(count);    // write as network byte order
     fwrite(&count, 4, 1, stdout);
     // fwrite(oldBuff, 1, 1, stdout);
+    /*
+    https://stackoverflow.com/a/5648626/21294350
+    */
     fprintf(stdout,"%c",*oldBuff); // this also works.
 }
 
