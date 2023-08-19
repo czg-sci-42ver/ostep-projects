@@ -1,0 +1,6 @@
+tests-out/
+# *
+!*.c
+# why this can't include all *.c in subdirectories.
+!**/**/*.c
+!.gitignore

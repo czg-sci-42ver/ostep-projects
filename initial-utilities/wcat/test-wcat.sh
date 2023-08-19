@@ -5,6 +5,8 @@ if ! [[ -x wcat ]]; then
     exit 1
 fi
 
+echo $*
+
 ../../tester/run-tests.sh $*
 
 
