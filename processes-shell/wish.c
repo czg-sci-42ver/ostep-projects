@@ -61,7 +61,9 @@ void *parseInput(void *arg) {
   */
   if (command == NULL || *command == '\0') {
     if (*command == '\0') {
+      #ifdef DEBUG_PROCESS
       printf("only >\n");
+      #endif
       /*
       control the output order
       */
@@ -109,7 +111,9 @@ void *parseInput(void *arg) {
     8.desc
     */
     if ((output = fopen(trim(commandLine), "w")) == NULL) {
+      #ifdef DEBUG_PROCESS
       printf("can't open the file.\n");
+      #endif
       printError();
       return NULL;
     }
@@ -263,7 +267,9 @@ int main(int argc, char *argv[]) {
       printf("wish> ");
 
     if ((nread = getline(&line, &linecap, in)) > 0) {
+      #ifdef DEBUG_PROCESS
       printf("get one line\n");
+      #endif
       char *command;
       int commands_num = 0;
       struct function_args args[BUFF_SIZE];
@@ -273,7 +279,9 @@ int main(int argc, char *argv[]) {
       */
       // remove newline character
       if (line[nread - 1] == '\n'){
+        #ifdef DEBUG_PROCESS
         printf("no contents got\n");
+        #endif
         line[nread - 1] = '\0';
       }
 
@@ -286,7 +294,9 @@ int main(int argc, char *argv[]) {
       */
       while ((command = strsep(&temp, "&")) != NULL)
         if (command[0] != '\0') {
+          #ifdef DEBUG_PROCESS
           printf("command:'%s'\n",command);
+          #endif
           /*
           1. why use strdup -> https://stackoverflow.com/a/4079901/21294350
           because of avoiding using const parameter as mutable str.
@@ -318,7 +328,9 @@ int main(int argc, char *argv[]) {
     2. 13.desc
     */
     else if (feof(in) != 0) {
+      #ifdef DEBUG_PROCESS
       printf("reach EOF\n");
+      #endif
       atexit(clean);
       exit(EXIT_SUCCESS); // EOF
     }
