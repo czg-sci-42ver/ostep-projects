@@ -4,6 +4,8 @@ tests-out/
 # 1st include all subdirs, then files in these dirs.
 !**/
 !*.c
+!*.h
+!*.sh
 # why this can't include all *.c in subdirectories.
 !**/**/*.c
 !.gitignore
