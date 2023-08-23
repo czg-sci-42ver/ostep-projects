@@ -6,6 +6,9 @@ tests-out/
 !*.c
 !*.h
 !*.sh
+!pre
+!*.run
+!*.py
 # why this can't include all *.c in subdirectories.
 !**/**/*.c
 !.gitignore
