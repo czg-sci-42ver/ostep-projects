@@ -13,7 +13,6 @@ x10 = []
 y10 = []
 t10 = 0
 for index, row in df.iterrows():
-    # print(row[0],";1: ",row[1],";2: ",row[2])
     tickets = int(row[2][9:])
     if (tickets == 30):
         x30.append(index)

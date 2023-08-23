@@ -13,3 +13,5 @@ mkdir ~/ostep-projects/${TARGET_DIR}/src
 cp -r ~/ostep-hw/projects/scheduling-xv6-lottery/* ~/ostep-projects/${TARGET_DIR}
 cp -r ~/xv6-public/* ~/ostep-projects/${TARGET_DIR}/src
 ./test-scheduler.sh
+. ~/.virtualenv/misc/bin/activate
+python ./plot.py
