@@ -12,3 +12,5 @@ tests-out/
 # why this can't include all *.c in subdirectories.
 !**/**/*.c
 !.gitignore
+src/
+tests*/
