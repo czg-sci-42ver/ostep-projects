@@ -8,9 +8,17 @@ ssize_t readline(int fd, void *buf, size_t maxlen) {
 	int rc;
         if ((rc = read_or_die(fd, &c, 1)) == 1) {
             *bufp++ = c;
+            /*
+            TODO different from csapp, here not take '\n' in account when counting num.
+            so directly '\n' return 0 and since check is `>=0`, so it doesn't influence the caller of `readline`.
+            */
             if (c == '\n')
                 break;
         } else if (rc == 0) {
+            /*
+            See /mnt/ubuntu/home/czg/csapp3e/Operating_System/code_test/miscs/readline_EOF
+            here should be "n == 0" to manipulate with EOF alone because init "n = 0"
+            */
             if (n == 1)
                 return 0; /* EOF, no data read */
             else
@@ -28,14 +36,27 @@ int open_client_fd(char *hostname, int port) {
     struct hostent *hp;
     struct sockaddr_in server_addr;
     
+    /*
+    csapp's Getaddrinfo may be better for general cases if ipv6/UDP, etc, see AI_ADDRCONFIG in man Getaddrinfo.
+    */
     if ((client_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
         return -1; 
     
     // Fill in the server's IP address and port 
+    /*
+    should use Getaddrinfo because gethostbyname deprecated
+    */
     if ((hp = gethostbyname(hostname)) == NULL)
         return -2; // check h_errno for cause of error 
+    /*
+    https://stackoverflow.com/a/17097088/21294350
+    maybe only user-friendly, and maybe because the author use BSD-variant MacOS
+    */
     bzero((char *) &server_addr, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
+    /*
+    default IPv4 address and in network byte order by `man gethostbyname`
+    */
     bcopy((char *) hp->h_addr, 
           (char *) &server_addr.sin_addr.s_addr, hp->h_length);
     server_addr.sin_port = htons(port);

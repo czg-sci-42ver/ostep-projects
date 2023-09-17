@@ -20,7 +20,11 @@
 //
 
 #include "io_helper.h"
-
+/*
+From csapp, it only use the browser to test multi-threaded server instead of clients
+except for `proxy_client`
+see https://dreamanddead.github.io/CSAPP-3e-Solutions/chapter12/12.39/ using ab to implement concurrent threads.
+*/
 #define MAXBUF (8192)
 
 //

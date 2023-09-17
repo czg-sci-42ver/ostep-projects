@@ -5,6 +5,10 @@
 // Some of this code stolen from Bryant/O'Halloran
 // Hopefully this is not a problem ... :)
 //
+/*
+compare with csapp
+icdiff /mnt/ubuntu/home/czg/csapp3e/netp/tiny/tiny.c ~/ostep-projects/concurrency-webserver/src/request.c | less_n
+*/
 
 #define MAXBUF (8192)
 
@@ -44,6 +48,10 @@ void request_read_headers(int fd) {
     char buf[MAXBUF];
     
     readline_or_die(fd, buf, MAXBUF);
+    /*
+    although linux use '\n' for the newline, but based on the above send contents, it use '\r\n'.
+    and `readline_or_die` finish when encountering '\n' is enough for both '\n' and '\r\n'
+    */
     while (strcmp(buf, "\r\n")) {
 	readline_or_die(fd, buf, MAXBUF);
     }
@@ -60,6 +68,9 @@ int request_parse_uri(char *uri, char *filename, char *cgiargs) {
     if (!strstr(uri, "cgi")) { 
 	// static
 	strcpy(cgiargs, "");
+    /*
+    TODO how uri's format implemented.
+    */
 	sprintf(filename, ".%s", uri);
 	if (uri[strlen(uri)-1] == '/') {
 	    strcat(filename, "index.html");
@@ -106,8 +117,11 @@ void request_serve_dynamic(int fd, char *filename, char *cgiargs) {
     
     if (fork_or_die() == 0) {                        // child
 	setenv_or_die("QUERY_STRING", cgiargs, 1);   // args to cgi go here
+    /*
+    So no need to change the cgi interface
+    */
 	dup2_or_die(fd, STDOUT_FILENO);              // make cgi writes go to socket (not screen)
-	extern char **environ;                       // defined by libc 
+	extern char **environ;                       // defined by libc; See `man 7 environ`
 	execve_or_die(filename, argv, environ);
     } else {
 	wait_or_die(NULL);
@@ -127,6 +141,9 @@ void request_serve_static(int fd, char *filename, int filesize) {
     close_or_die(srcfd);
     
     // put together response
+    /*
+    more user-friendly than csapp multiple sprintf
+    */
     sprintf(buf, ""
 	    "HTTP/1.0 200 OK\r\n"
 	    "Server: OSTEP WebServer\r\n"
@@ -134,6 +151,9 @@ void request_serve_static(int fd, char *filename, int filesize) {
 	    "Content-Type: %s\r\n\r\n", 
 	    filesize, filetype);
     
+    /*
+    adjacent write maybe better to trick OS into combining them to transfer.  
+    */
     write_or_die(fd, buf, strlen(buf));
     
     //  Writes out to the client socket the memory-mapped file 
@@ -147,6 +167,10 @@ void request_handle(int fd) {
     struct stat sbuf;
     char buf[MAXBUF], method[MAXBUF], uri[MAXBUF], version[MAXBUF];
     char filename[MAXBUF], cgiargs[MAXBUF];
+
+    /*
+    here no self-defined rio struct, so no `rio_readinitb`
+    */
     
     readline_or_die(fd, buf, MAXBUF);
     sscanf(buf, "%s %s %s", method, uri, version);
