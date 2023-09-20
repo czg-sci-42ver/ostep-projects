@@ -34,15 +34,28 @@ void Reduce(char *key, Getter get_next, int partition_number) {
 }
 
 int main(int argc, char *argv[]) {
-    MR_Run_FILE(argc, argv, Map_FILE, 10, Reduce, 10, MR_DefaultHashPartition);
+    MR_Run_FILE(argc, argv, Map_FILE, 10, Reduce, 2, MR_DefaultHashPartition);
+    return 0;
 }
 
-static Key_map key_value_list[100];
+// static Key_map key_value_list[100];
+HashTable *ht;
+static pthread_mutex_t ht_lock=PTHREAD_MUTEX_INITIALIZER;
 /*
 TODO this is locked version to store into global data struct.
 */
 void MR_Emit(char *key, char *value){
-  
+  /*
+  1. not recommend hashtable because the critical section is somewhat big
+  although we can use multiple independent locks but overhead may be too high.
+  2. Here we can also use simpler struct.
+  */
+  pthread_mutex_lock(&ht_lock);
+  #ifdef EMIT_LOG
+  printf("emit %s %s\n",key,value);
+  #endif
+  ht_insert(ht,key,value);
+  pthread_mutex_unlock(&ht_lock);
 }
 
 static int file_group_size;
@@ -61,6 +74,7 @@ void MR_Run_FILE(int argc, char *argv[],
 	    Mapper_FILE map, int num_mappers, 
 	    Reducer reduce, int num_reducers, 
 	    Partitioner partition){
+        assert(argc!=1);
         pthread_t threads[num_mappers];
         int thread_num=num_mappers;
         /*
@@ -88,7 +102,7 @@ void MR_Run_FILE(int argc, char *argv[],
         for (int i=1; i<argc; i++) {
           file_index=i-1;
           fp[file_index] = fopen(argv[i], "r");
-          printf("read %dth file %s\n",i,argv[i]);
+          // printf("read %dth file %s\n",i,argv[i]);
           assert(fp[file_index] != NULL);
           #ifdef SFF
           fstat(fileno(fp[file_index]),&stat_buf);
@@ -99,17 +113,27 @@ void MR_Run_FILE(int argc, char *argv[],
         #ifdef SFF
         quickSort(files_info,0,file_num-1);
         for (int i=0; i<file_num; i++) {
+          #ifdef SIZE_LOG
           printf("%dth size:%d\n",files_info[i].index,files_info[i].size);
+          #endif
         }
         for (int i=0; i<file_num; i++) {
           group_ele_index = i/num_mappers;
           thread_target=i%num_mappers;
           fp_group[thread_target][group_ele_index]=fp[files_info[i].index];
+          #ifdef GROUP_LOG
           printf("thread_target %d group_ele_index %d stores fp_index: %d\n",thread_target,group_ele_index,files_info[i].index);
+          #endif
         }
-        // free(fp);
+        free(fp);
         #endif
-
+        
+        /*
+        your MR library should use this function to decide which partition (and hence, which reducer thread) 
+        gets a particular key/list of values to process.
+        */
+        ht = create_table(num_reducers);
+        assert(ht!=NULL);
 
         for (int i=0; i<thread_num; i++) {
           /*
@@ -130,11 +154,6 @@ void MR_Run_FILE(int argc, char *argv[],
           */
           pthread_join(threads[i],NULL); 
         }
-
-        /*
-        your MR library should use this function to decide which partition (and hence, which reducer thread) 
-        gets a particular key/list of values to process.
-        */
-        HashTable *ht = create_table(num_reducers);
-        MR_DefaultHashPartition(, num_reducers);
+        print_table(ht);
+        free_table(ht);
 }

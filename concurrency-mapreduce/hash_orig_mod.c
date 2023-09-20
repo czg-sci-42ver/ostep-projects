@@ -383,6 +383,7 @@ int main()
     ht_insert(ht, (char *)"2", (char *)"Second address");
     ht_insert(ht, (char *)"Hel", (char *)"Third address");
     ht_insert(ht, (char *)"Cau", (char *)"Fourth address");
+    print_table(ht);
     print_search(ht, (char *)"1");
     print_search(ht, (char *)"2");
     print_search(ht, (char *)"3");

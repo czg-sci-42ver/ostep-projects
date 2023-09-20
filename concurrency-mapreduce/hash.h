@@ -1,12 +1,15 @@
 #ifndef HASH_H
 #define HASH_H
+#include <assert.h>
 #define CAPACITY 200 // Size of the HashTable.
 // Defines the HashTable item.
+#define VALUE_SIZE 100
 typedef struct Ht_item
 {
     char *key;
     char **value;
     int value_list_len;
+    int store_to_overflow_buckets;
 } Ht_item;
 
 // Defines the LinkedList.
@@ -27,4 +30,8 @@ typedef struct HashTable
 } HashTable;
 HashTable *create_table(int size);
 void free_item(Ht_item *item);
+void ht_insert(HashTable *table, char *key, char *value);
+void free_table(HashTable *table);
+void print_table(HashTable *table);
+void append_item_value(char *value,Ht_item *item);
 #endif

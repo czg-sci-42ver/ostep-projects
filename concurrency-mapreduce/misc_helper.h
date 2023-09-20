@@ -1,6 +1,5 @@
 #ifndef __MISC_HELPER_H
 #define __MISC_HELPER_H
-#include <assert.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include "mapreduce.h"
@@ -14,7 +13,7 @@ typedef struct file_info {
 } File_info;
 typedef struct key_map {
   char key[100];
-  char *value_list[];
+//   char *value_list[];
   pthread_mutex_t lock;
 } Key_map;
 

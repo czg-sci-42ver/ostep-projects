@@ -9,7 +9,6 @@ https://www.digitalocean.com/community/tutorials/hash-table-in-c-plus-plus
 #include "hash.h"
 
 #define SORT_KEY_ASCEND
-// #define CHECK_CREATE_ITEM
 
 /*
 from paper 4.1, multiple keys maybe to one partition.
@@ -38,57 +37,6 @@ LinkedList *linkedlist_insert(LinkedList *list, Ht_item *item)
     /*
     This maybe duplicate, because `if (head == NULL)`
     */
-    #ifdef SORT_KEY_ASCEND
-    // int insert_index = 0;
-    LinkedList *prev=NULL,*tmp=list; // similar to ht_delete
-    assert(tmp!=NULL);
-    int cmp=0,find_key=0;
-    for (; tmp!=NULL; tmp=tmp->next) {
-      /*
-      until current key larger than the key to insert.
-      this with O(n^2) complexity is not recommended, here is only for representation.
-      */
-      cmp=strcmp(tmp->item->key, item->key);
-      if (cmp>0) {
-        #ifdef CMP_LOG
-        printf("%s > %s\n",tmp->item->key,item->key);
-        #endif
-        break;
-      }else if (cmp==0){
-        find_key=1;
-        break;
-      }
-      prev = tmp;
-    }
-    if (find_key) {
-      append_item_value(item->value[0],tmp->item);
-      /*
-      check all return paths to fix the valgrind errors.
-      */
-      free_item(item);
-      // printf("append item: %p\n",tmp->item);
-    }else {
-      LinkedList *mid = allocate_list();
-      if (prev) {
-        mid->item = item;
-        mid->next = tmp;
-        // printf("finish mid assignment with mid ptr: %p\n",mid);
-        fflush(stdout);
-        prev->next=mid;
-        #ifdef CHECK_CREATE_ITEM
-        printf("insert item in the mid: %p\n",item);
-        #endif
-      }else {
-        /*
-        insert at the beginning of overflow_buckets
-        here tmp=list
-        */
-        *mid=*tmp;
-        tmp->item=item;
-        tmp->next=mid;
-      }
-    }
-    #else
     if (!list)
     {
         LinkedList *head = allocate_list();
@@ -120,7 +68,6 @@ LinkedList *linkedlist_insert(LinkedList *list, Ht_item *item)
     node->item = item;
     node->next = NULL;
     temp->next = node;
-    #endif
     return list;
 }
 
@@ -155,7 +102,7 @@ void free_linkedlist(LinkedList *list)
     {
         temp = list;
         list = list->next;
-        free_item(temp->item);
+        free_item(list->item);
         free(temp);
     }
 }
@@ -200,15 +147,14 @@ Ht_item *copy_item(Ht_item *target_item)
     return item;
 }
 
-Ht_item *create_item(char *key, char *value,int store_to_overflow_buckets)
+Ht_item *create_item(char *key, char *value)
 {
     // Creates a pointer to a new HashTable item.
     Ht_item *item = (Ht_item *)malloc(sizeof(Ht_item));
     item->value_list_len=0;
-    item->store_to_overflow_buckets=store_to_overflow_buckets;
     item->key = (char *)malloc(strlen(key) + 1);
     strcpy(item->key, key);
-    item->value = (char **)calloc(VALUE_SIZE,sizeof(char*));
+    item->value = (char **)malloc(100*sizeof(char*));
     append_item_value(value,item);
     return item;
 }
@@ -232,9 +178,6 @@ HashTable *create_table(int size)
 void free_item(Ht_item *item)
 {
     // Frees an item.
-    #ifdef CHECK_CREATE_ITEM
-    printf("free item: %p with size:%ld\n",item,sizeof(Ht_item));
-    #endif
     free(item->key);
     for (int i=0; i<item->value_list_len; i++) {
       free(item->value[i]);
@@ -269,21 +212,12 @@ void handle_collision(HashTable *table, unsigned long index, Ht_item *item)
         // Creates the list.
         head = allocate_list();
         head->item = item;
-        #ifdef CHECK_CREATE_ITEM
-        printf("handle_collision insert head: %p\n",item);
-        #endif
         head->next = NULL; // self-added
         table->overflow_buckets[index] = head;
         return;
     }
     else
     {
-        // #ifdef SORT_KEY_ASCEND
-        // if (strcmp(head->item->key, item->key)>0) {
-        //   LinkedList *tmp = head;
-        //   head->item=item;
-        // }
-        // #endif
         // Insert to the list.
         table->overflow_buckets[index] = linkedlist_insert(head, item);
         return;
@@ -303,10 +237,7 @@ void ht_insert(HashTable *table, char *key, char *value)
     if (current_item == NULL)
     {
         // Creates the item.
-        Ht_item *item = create_item(key, value,0);
-        #ifdef CHECK_CREATE_ITEM
-        printf("insert at the head: %p\n",item);
-        #endif
+        Ht_item *item = create_item(key, value);
         // Key does not exist.
         if (table->count == table->size)
         {
@@ -332,48 +263,19 @@ void ht_insert(HashTable *table, char *key, char *value)
         else
         {
             // Scenario 2: Handle the collision.
+            Ht_item *item = create_item(key, value);
             /*
             here inserted different key from `table->items[index]->key` to `overflow_buckets`.
             */
             #ifdef SORT_KEY_ASCEND
-            Ht_item *item = create_item(key, value,0);
-            #ifdef CHECK_CREATE_ITEM
-            printf("create_item: %p\n",item);
-            #endif
-            // int find_key = 0;
-            /*
-            here search to 
-            */
-            if (cmp>0) {
-              /*
-              store_to_overflow_buckets not use.
-              */
-              // item->store_to_overflow_buckets=0;
-              #ifdef CMP_LOG
-              printf("%s > %s\n",current_item->key,key);
-              #endif
-              /*
-              https://stackoverflow.com/questions/2302351/assign-one-struct-to-another-in-c#comment111331700_2302370
-              not make them point to same addr, otherwise undefined -> sometimes `SIGSEGV` while sometimes not.
-              */
-              // Ht_item *tmp=current_item;
-              Ht_item tmp;
-              #ifdef CHECK_CREATE_ITEM
-              printf("before swap: %p %p\n",current_item,item);
-              #endif
-              tmp=*current_item;
+            if (cmp<0) {
+              Ht_item *tmp=current_item;
+              *tmp=*current_item;
               *current_item=*item;
-              *item=tmp;
-              #ifdef CHECK_CREATE_ITEM
-              printf("after swap: %p %p\n",current_item,item);
-              #endif
-            }else {
-              // item->store_to_overflow_buckets=1;
+              *item=*tmp;
             }
-            #else
-            Ht_item *item = create_item(key, value);
             #endif
-            handle_collision(table, index,item);
+            handle_collision(table, index, item);
             return;
         }
     }
@@ -499,26 +401,20 @@ void ht_delete(HashTable *table, char *key)
 //     }
 // }
 
-void print_table(HashTable *table)
-{
-    printf("\nHash Table size: %d\n-------------------\n",table->size);
+// void print_table(HashTable *table)
+// {
+//     printf("\nHash Table\n-------------------\n");
 
-    for (int i = 0; i < table -> size; i++)
-    {
-        if (table -> items[i])
-        {
-            printf("Index:%d, Key:%s, Value:%s Len:%d\n",\
-             i, table -> items[i] -> key, table -> items[i] -> value[0],table->items[i]->value_list_len);
-        }
-        LinkedList *tmp=table->overflow_buckets[i];
-        printf("overflow_buckets:\n%10s %10s %10s\n","key","value","len");
-        for (; tmp!=NULL && tmp->next!=NULL; tmp=tmp->next) {
-          printf("%10s %10s %10d\n",tmp->item->key,tmp->item->value[0],tmp->item->value_list_len);
-        }
-    }
+//     for (int i = 0; i < table -> size; i++)
+//     {
+//         if (table -> items[i])
+//         {
+//             printf("Index:%d, Key:%s, Value:%s\n", i, table -> items[i] -> key, table -> items[i] -> value);
+//         }
+//     }
 
-    printf("-------------------\n\n");
-}
+//     printf("-------------------\n\n");
+// }
 
 // int main()
 // {
