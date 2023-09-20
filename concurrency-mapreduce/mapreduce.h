@@ -17,4 +17,14 @@ void MR_Run(int argc, char *argv[],
 	    Reducer reduce, int num_reducers, 
 	    Partitioner partition);
 
+/*
+self-added
+*/
+#include <stdio.h>
+typedef void (*Mapper_FILE)(FILE *file_name);
+void MR_Run_FILE(int argc, char *argv[], 
+	    Mapper_FILE map, int num_mappers, 
+	    Reducer reduce, int num_reducers, 
+	    Partitioner partition);
+
 #endif // __mapreduce_h__
