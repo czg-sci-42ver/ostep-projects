@@ -1,9 +1,16 @@
 /*
-1. based on paper p13 and README
+1. based on original paper https://static.googleusercontent.com/media/research.google.com/en//archive/mapreduce-osdi04.pdf p13 and README
+Also see https://kaiyon07.github.io/data/MapReduce_slides.pdf p5 or others before 17
+TODO p10 use something like quicksort which I only used to sort files but not emits.
 2. > rather, they just write Map() and Reduce() functions and the infrastructure does the rest.
 because the files and keys are independent most of time.
 3. target
 > shows how to count the number of occurrences of each word in a set of documents:
+see https://pages.cs.wisc.edu/~aws/papers/pldi16.pdf 2.2 and p9 wordcount
+4. See paper Figure 1 for- structure
+here
+a. we not use fork and then threads, just use threads
+b. TODO maybe "backup" means copy -> 
 */
 
 #include <stdlib.h>
