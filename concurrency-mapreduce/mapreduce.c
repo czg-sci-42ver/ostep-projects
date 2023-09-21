@@ -20,6 +20,7 @@ b. TODO maybe "backup" means copy ->
 #define NO_MAP_PARALLEL_FILES
 // #define SFF
 #define GROUP_LOG
+#define CMP_HASH_TABLE
 
 void Map_FILE(FILE *file_name) {
     char *line = NULL;
@@ -42,6 +43,9 @@ void Reduce(char *key, Getter get_next, int partition_number) {
     */
     while ((value = get_next(key, partition_number)) != NULL)
         count++;
+    #ifdef CMP_HASH_TABLE 
+    printf("Index:%d\n",partition_number);
+    #endif
     printf("%s %d\n", key, count);
 }
 
