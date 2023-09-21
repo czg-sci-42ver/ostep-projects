@@ -16,6 +16,9 @@ typedef struct key_map {
 //   char *value_list[];
   pthread_mutex_t lock;
 } Key_map;
-
+typedef struct reduce_arg {
+  int partition_number;
+} Reduce_arg ;
+char * get_next(char *key, int partition_number);
 
 #endif

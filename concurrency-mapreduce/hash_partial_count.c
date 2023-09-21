@@ -32,7 +32,7 @@ LinkedList *allocate_list()
 /*
 next is always NULL
 */
-LinkedList *linkedlist_insert(LinkedList *list, Ht_item *item, HashTable* ht)
+LinkedList *linkedlist_insert(LinkedList *list, Ht_item *item)
 {
     // Inserts the item onto the LinkedList.
     /*
@@ -87,9 +87,6 @@ LinkedList *linkedlist_insert(LinkedList *list, Ht_item *item, HashTable* ht)
         *mid=*tmp;
         tmp->item=item;
         tmp->next=mid;
-      }
-      if (item->store_to_overflow_buckets==1) {
-        ht->count++;
       }
     }
     #else
@@ -210,10 +207,6 @@ Ht_item *create_item(char *key, char *value,int store_to_overflow_buckets)
     Ht_item *item = (Ht_item *)malloc(sizeof(Ht_item));
     item->value_list_len=0;
     item->store_to_overflow_buckets=store_to_overflow_buckets;
-    /*
-    only used in get_next func
-    */
-    item->get_next_index=0;
     item->key = (char *)malloc(strlen(key) + 1);
     strcpy(item->key, key);
     item->value = (char **)calloc(VALUE_SIZE,sizeof(char*));
@@ -277,9 +270,6 @@ void handle_collision(HashTable *table, unsigned long index, Ht_item *item)
         // Creates the list.
         head = allocate_list();
         head->item = item;
-        if (item->store_to_overflow_buckets==1) {
-            table->count++;
-        }
         #ifdef CHECK_CREATE_ITEM
         printf("handle_collision insert head: %p\n",item);
         #endif
@@ -296,7 +286,7 @@ void handle_collision(HashTable *table, unsigned long index, Ht_item *item)
         // }
         // #endif
         // Insert to the list.
-        table->overflow_buckets[index] = linkedlist_insert(head, item, table);
+        table->overflow_buckets[index] = linkedlist_insert(head, item);
         return;
     }
 }
@@ -359,7 +349,7 @@ void ht_insert(HashTable *table, char *key, char *value)
               /*
               store_to_overflow_buckets not use.
               */
-              item->store_to_overflow_buckets=0;
+              // item->store_to_overflow_buckets=0;
               #ifdef CMP_LOG
               printf("%s > %s\n",current_item->key,key);
               #endif
@@ -375,12 +365,11 @@ void ht_insert(HashTable *table, char *key, char *value)
               tmp=*current_item;
               *current_item=*item;
               *item=tmp;
-              table->count++;
               #ifdef CHECK_CREATE_ITEM
               printf("after swap: %p %p\n",current_item,item);
               #endif
             }else {
-              item->store_to_overflow_buckets=1;
+              // item->store_to_overflow_buckets=1;
             }
             #else
             Ht_item *item = create_item(key, value);
@@ -389,49 +378,6 @@ void ht_insert(HashTable *table, char *key, char *value)
             return;
         }
     }
-}
-
-char *ht_search_with_get_next_partition(HashTable *table, char *key, int index){
-    Ht_item *item = table->items[index];
-    LinkedList *head = table->overflow_buckets[index];
-
-    // Provide only non-NULL values.
-    /*
-    use while to also search overflow_buckets.
-    */
-    while (item != NULL)
-    {
-        if (strcmp(item->key, key) == 0){
-            /*
-            only change this line based on ht_search.
-            */
-            #ifdef CHECK_COUNT
-            if (strcmp(key, "9")==0) {
-                printf("%s return %s\n",key,item->value[item->get_next_index]);
-            }
-            #endif
-            return item->value[item->get_next_index++];
-        }
-
-        if (head == NULL)
-            return NULL;
-
-        item = head->item;
-        head = head->next;
-    }
-
-    return NULL;
-}
-
-char *ht_search_with_get_next(HashTable *table, char *key)
-{
-    // Searches for the key in the HashTable.
-    // Returns NULL if it doesn't exist.
-    int index = MR_DefaultHashPartition(key,table->size);
-    /*
-    here is only to use the get_next API although it increase the call overheads.
-    */
-    return ht_search_with_get_next_partition(table,key,index);
 }
 
 char *ht_search(HashTable *table, char *key)

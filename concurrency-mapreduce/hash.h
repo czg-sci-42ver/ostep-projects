@@ -10,6 +10,7 @@ typedef struct Ht_item
     char **value;
     int value_list_len;
     int store_to_overflow_buckets;
+    int get_next_index;
 } Ht_item;
 
 // Defines the LinkedList.
@@ -34,4 +35,6 @@ void ht_insert(HashTable *table, char *key, char *value);
 void free_table(HashTable *table);
 void print_table(HashTable *table);
 void append_item_value(char *value,Ht_item *item);
+char *ht_search_with_get_next(HashTable *table, char *key);
+char *ht_search_with_get_next_partition(HashTable *table, char *key, int index);
 #endif
