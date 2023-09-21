@@ -63,7 +63,8 @@ LinkedList *linkedlist_insert(LinkedList *list, Ht_item *item)
     if (find_key) {
       append_item_value(item->value[0],tmp->item);
       /*
-      check all return paths to fix the valgrind errors.
+      1. check all return paths to fix the valgrind errors.
+      2. TODO better to change the API to avoid the frequent free and malloc of this appended thing.
       */
       free_item(item);
       // printf("append item: %p\n",tmp->item);
@@ -511,9 +512,11 @@ void print_table(HashTable *table)
              i, table -> items[i] -> key, table -> items[i] -> value[0],table->items[i]->value_list_len);
         }
         LinkedList *tmp=table->overflow_buckets[i];
-        printf("overflow_buckets:\n%10s %10s %10s\n","key","value","len");
-        for (; tmp!=NULL && tmp->next!=NULL; tmp=tmp->next) {
-          printf("%10s %10s %10d\n",tmp->item->key,tmp->item->value[0],tmp->item->value_list_len);
+        if (tmp!=NULL) {
+            printf("overflow_buckets:\n%10s %10s %10s\n","key","value","len");
+            do{
+                printf("%10s %10s %10d\n",tmp->item->key,tmp->item->value[0],tmp->item->value_list_len);
+            }while((tmp=tmp->next)!=NULL);
         }
     }
 
