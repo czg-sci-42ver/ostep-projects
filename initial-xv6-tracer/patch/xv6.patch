@@ -1,0 +1,249 @@
+diff --git a/Makefile b/Makefile
+index 09d790c..1ff6aa0 100644
+--- a/Makefile
++++ b/Makefile
+@@ -29,7 +29,7 @@ OBJS = \
+ 	vm.o\
+ 
+ # Cross-compiling (e.g., on Mac OS X)
+-# TOOLPREFIX = i386-jos-elf
++TOOLPREFIX = i386-elf-
+ 
+ # Using native tools (e.g., on X86 Linux)
+ #TOOLPREFIX = 
+@@ -76,7 +76,7 @@ AS = $(TOOLPREFIX)gas
+ LD = $(TOOLPREFIX)ld
+ OBJCOPY = $(TOOLPREFIX)objcopy
+ OBJDUMP = $(TOOLPREFIX)objdump
+-CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -O2 -Wall -MD -ggdb -m32 -Werror -fno-omit-frame-pointer
++CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -O2 -Wall -MD -ggdb -m32 -fno-omit-frame-pointer
+ CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
+ ASFLAGS = -m32 -gdwarf-2 -Wa,-divide
+ # FreeBSD ld wants ``elf_i386_fbsd''
+@@ -178,6 +178,7 @@ UPROGS=\
+ 	_rm\
+ 	_sh\
+ 	_stressfs\
++	_test_readcount\
+ 	_usertests\
+ 	_wc\
+ 	_zombie\
+@@ -217,7 +218,7 @@ QEMUGDB = $(shell if $(QEMU) -help | grep -q '^-gdb'; \
+ 	then echo "-gdb tcp::$(GDBPORT)"; \
+ 	else echo "-s -p $(GDBPORT)"; fi)
+ ifndef CPUS
+-CPUS := 2
++CPUS := 1
+ endif
+ QEMUOPTS = -drive file=fs.img,index=1,media=disk,format=raw -drive file=xv6.img,index=0,media=disk,format=raw -smp $(CPUS) -m 512 $(QEMUEXTRA)
+ 
+diff --git a/defs.h b/defs.h
+index 82fb982..86d99a1 100644
+--- a/defs.h
++++ b/defs.h
+@@ -156,6 +156,9 @@ int             fetchint(uint, int*);
+ int             fetchstr(uint, char**);
+ void            syscall(void);
+ 
++// sysfile.c
++void            init_readcount_lock(void);
++
+ // timer.c
+ void            timerinit(void);
+ 
+diff --git a/main.c b/main.c
+index 9924e64..98fbf35 100644
+--- a/main.c
++++ b/main.c
+@@ -33,6 +33,7 @@ main(void)
+   ideinit();       // disk 
+   startothers();   // start other processors
+   kinit2(P2V(4*1024*1024), P2V(PHYSTOP)); // must come after startothers()
++  init_readcount_lock();
+   userinit();      // first user process
+   mpmain();        // finish this processor's setup
+ }
+diff --git a/syscall.c b/syscall.c
+index ee85261..2b04eaf 100644
+--- a/syscall.c
++++ b/syscall.c
+@@ -104,6 +104,9 @@ extern int sys_wait(void);
+ extern int sys_write(void);
+ extern int sys_uptime(void);
+ 
++extern int sys_trace(void);
++extern int sys_getcount(void);
++
+ static int (*syscalls[])(void) = {
+ [SYS_fork]    sys_fork,
+ [SYS_exit]    sys_exit,
+@@ -126,6 +129,9 @@ static int (*syscalls[])(void) = {
+ [SYS_link]    sys_link,
+ [SYS_mkdir]   sys_mkdir,
+ [SYS_close]   sys_close,
++
++[SYS_getcount] sys_getcount,
++[SYS_trace] sys_trace
+ };
+ 
+ void
+diff --git a/syscall.h b/syscall.h
+index bc5f356..536f588 100644
+--- a/syscall.h
++++ b/syscall.h
+@@ -20,3 +20,5 @@
+ #define SYS_link   19
+ #define SYS_mkdir  20
+ #define SYS_close  21
++#define SYS_getcount 22
++#define SYS_trace 23
+diff --git a/sysfile.c b/sysfile.c
+index bfe61b7..b55f92e 100644
+--- a/sysfile.c
++++ b/sysfile.c
+@@ -66,6 +66,13 @@ sys_dup(void)
+   return fd;
+ }
+ 
++static uint readcount = 0;
++static struct spinlock readcount_lock;
++void
++init_readcount_lock(void) {
++  initlock(&readcount_lock, "readcount");
++}
++
+ int
+ sys_read(void)
+ {
+@@ -282,6 +289,55 @@ create(char *path, short type, short major, short minor)
+   return ip;
+ }
+ 
++#define PATH_SIZE 256
++#define MAX_TRACE_PATH_NUM 200
++/*
++here for simplicity not use dynamic allocation. Also not use aligned struct structure.
++*/
++static char trace_pathname[PATH_SIZE];
++static uint trace_counter;
++static uchar trace_enabled;
++
++int
++sys_trace(void) {
++  int i;
++  char *pathname;
++
++  if(argstr(0, &pathname) < 0)
++    return -1;
++  if (pathname==0) {
++    return -1;
++  }
++  /*
++  may overwrite.
++  */
++  acquire(&readcount_lock);
++  strncpy(trace_pathname, pathname, strlen(pathname)+1);
++  cprintf("trace_pathname %s pathname %s\n",trace_pathname,pathname);
++  trace_counter=0;
++  trace_enabled=1;
++  release(&readcount_lock);
++  return 0;
++}
++
++int
++sys_getcount(void) {
++  /*
++  obviously this lock should not be used by the caller to simplify the call process.
++  */
++  acquire(&readcount_lock);
++  if(!trace_enabled){
++    /*
++    otherwise "lapicid 0: panic: acquire".
++    */
++    release(&readcount_lock);
++    return -1;
++  }
++  int ret=trace_counter;
++  release(&readcount_lock);
++  return ret;
++}
++
+ int
+ sys_open(void)
+ {
+@@ -326,6 +382,13 @@ sys_open(void)
+ 
+   f->type = FD_INODE;
+   f->ip = ip;
++  acquire(&readcount_lock);
++  if (strncmp(path,trace_pathname,strlen(path))==0 && trace_enabled) {
++    trace_counter++;
++  }else {
++    cprintf("trace_enabled %d trace_pathname %s path %s\n",trace_enabled,trace_pathname,path);
++  }
++  release(&readcount_lock);
+   f->off = 0;
+   f->readable = !(omode & O_WRONLY);
+   f->writable = (omode & O_WRONLY) || (omode & O_RDWR);
+diff --git a/test_readcount.c b/test_readcount.c
+new file mode 100644
+index 0000000..d2eecff
+--- /dev/null
++++ b/test_readcount.c
+@@ -0,0 +1,32 @@
++#include "fcntl.h"
++#include "types.h"
++#include "user.h"
++
++int main() {
++  int count = getcount();
++  printf(1, "XV6_TEST_OUTPUT Before calling read(): %d\n", count);
++  char track_file[10]="README";
++  if(trace(track_file)!=0){
++    printf(2, "XV6_TEST_OUTPUT open fail\n");
++  }
++  int fd = open(track_file, O_RDONLY);
++  int child_fd = fork();
++  printf(1, "XV6_TEST_OUTPUT before fork cnt %d\n", getcount());
++  int child_file_fd,parent_file_fd;
++  if (child_fd==0) {
++    child_file_fd = open(track_file, O_RDONLY);
++    printf(1, "XV6_TEST_OUTPUT child cnt %d\n", getcount());
++    close(child_file_fd);
++    exit();
++  } else {
++    if (wait()==-1) {
++      printf(2, "XV6_TEST_OUTPUT wait fail\n");
++    };
++    parent_file_fd = open(track_file, O_RDONLY);
++    printf(1, "XV6_TEST_OUTPUT parent cnt %d\n", getcount());
++    close(parent_file_fd);
++  }
++  printf(1, "XV6_TEST_OUTPUT global final cnt %d\n", getcount());
++  close(fd);
++  exit();
++}
+diff --git a/user.h b/user.h
+index 4f99c52..ce6db56 100644
+--- a/user.h
++++ b/user.h
+@@ -23,6 +23,8 @@ int getpid(void);
+ char* sbrk(int);
+ int sleep(int);
+ int uptime(void);
++int trace(const char *pathname);
++int getcount(void);
+ 
+ // ulib.c
+ int stat(const char*, struct stat*);
+diff --git a/usys.S b/usys.S
+index 8bfd8a1..f6b53f7 100644
+--- a/usys.S
++++ b/usys.S
+@@ -29,3 +29,5 @@ SYSCALL(getpid)
+ SYSCALL(sbrk)
+ SYSCALL(sleep)
+ SYSCALL(uptime)
++SYSCALL(getcount)
++SYSCALL(trace)
+\ No newline at end of file
