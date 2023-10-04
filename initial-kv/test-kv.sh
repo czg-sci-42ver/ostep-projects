@@ -5,6 +5,7 @@ if ! [[ -x kv ]]; then
     exit 1
 fi
 
+rm database.txt
 ../tester/run-tests.sh $*
 
 

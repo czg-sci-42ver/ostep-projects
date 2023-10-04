@@ -16,6 +16,6 @@ rm -r tests
 rm -r tests-out
 rm -r src
 mkdir src
-mkdir tests
+# mkdir tests
 cp ~/xv6-public/* ~/ostep-projects/${PROJECT_DIR}/src
 ./test-getreadcount.sh
