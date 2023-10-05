@@ -1,5 +1,5 @@
 CC     := gcc
-CFLAGS := -Wall -Werror 
+CFLAGS := -Wall -Werror -g
 
 SRCS   := client.c \
 	server.c 
@@ -7,14 +7,22 @@ SRCS   := client.c \
 OBJS   := ${SRCS:c=o}
 PROGS  := ${SRCS:.c=}
 
-.PHONY: all
-all: ${PROGS}
-
+LIB=../libmfs.so
+.PHONY: all ${LIB}
+all: ${LIB} ${PROGS} 
+${LIB}:
+	make -C ..
+ORIGIN_LD=${LD_LIBRARY_PATH}
+# export LD_LIBRARY_PATH=${ORIGIN_LD}:
 ${PROGS} : % : %.o Makefile
-	${CC} $< -o $@ udp.c
+# https://stackoverflow.com/a/8426110/21294350
+# https://stackoverflow.com/a/15727498/21294350 see `man ld`
+	$(shell if [[ -f fs.img ]];then rm fs.img;fi)
+	${CC} $< -o $@ udp.c -L$(shell dirname "${PWD}") -l:libmfs.so
 
 clean:
 	rm -f ${PROGS} ${OBJS}
 
 %.o: %.c Makefile
 	${CC} ${CFLAGS} -c $<
+	$(shell clang-format -i *.[ch] ../*.[ch])

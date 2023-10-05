@@ -98,7 +98,12 @@ void store_kv(uint* index,FILE * stream_ptr){
   char reset_char=0;
   if (maps[0].key==-2) {
     // fwrite(&reset_char, 1, origin_map_end, stream_ptr);
-    ftruncate(stream_ptr->_fileno, 0);
+    int fd = fileno(stream_ptr);
+    if (fd == -1) {
+      fprintf(stderr, "fileno failed\n");
+      exit(EXIT_FAILURE);
+    }
+    ftruncate(fd, 0);
     return;
   }
   uint end=*index;
@@ -162,7 +167,8 @@ int main(int argc, char *argv[]){
   while ((nread = getline(&line, &len, db_file)) != -1) {
     write_map(line, &map_num);
   }
-  origin_map_end=db_file->_offset;
+  origin_map_end=ftell(db_file);
+  assert(origin_map_end!=-1);
   for (int i=1; i<argc; i++) {
     token = strsep(&argv[i], ",");
     switch (*token) {
