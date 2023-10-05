@@ -297,7 +297,9 @@ enum delta_result_type {
     X(cas_hits) \
     X(cas_badval) \
     X(incr_hits) \
-    X(decr_hits)
+    X(decr_hits) \
+    X(mul_hits) \
+    X(div_hits)
 
 /** Stats stored per slab (and per thread). */
 struct slab_stats {
@@ -330,7 +332,9 @@ struct slab_stats {
     X(response_obj_bytes) \
     X(read_buf_oom) \
     X(store_too_large) \
-    X(store_no_memory)
+    X(store_no_memory) \
+    X(mul_misses) \
+    X(div_misses)
 
 #ifdef EXTSTORE
 #define EXTSTORE_THREAD_STATS_FIELDS \
@@ -914,11 +918,24 @@ extern void *ext_storage;
  * Functions
  */
 void do_accept_new_conns(const bool do_accept);
+#define MUL
+#ifdef MUL
+typedef enum mul_type {
+    DECR_TYPE=0, // this not used
+    MUL_TYPE=1,
+    DIV_TYPE=2,
+    NONE_TYPE=3,
+} Mul_type;
+#endif
 enum delta_result_type do_add_delta(conn *c, const char *key,
                                     const size_t nkey, const bool incr,
                                     const int64_t delta, char *buf,
                                     uint64_t *cas, const uint32_t hv,
+                                    #ifdef MUL
+                                    item **it_ret,const Mul_type mul);
+                                    #else
                                     item **it_ret);
+                                    #endif
 enum store_item_type do_store_item(item *item, int comm, conn* c, const uint32_t hv);
 void thread_io_queue_add(LIBEVENT_THREAD *t, int type, void *ctx, io_queue_stack_cb cb, io_queue_stack_cb com_cb, io_queue_cb ret_cb, io_queue_cb fin_cb);
 void conn_io_queue_setup(conn *c);
@@ -964,7 +981,11 @@ void sidethread_conn_close(conn *c);
 enum delta_result_type add_delta(conn *c, const char *key,
                                  const size_t nkey, bool incr,
                                  const int64_t delta, char *buf,
+#ifdef MUL
+                                 uint64_t *cas, Mul_type mul);
+#else
                                  uint64_t *cas);
+#endif
 void accept_new_conns(const bool do_accept);
 void  conn_close_idle(conn *c);
 void  conn_close_all(void);

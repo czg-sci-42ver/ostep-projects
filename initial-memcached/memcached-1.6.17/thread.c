@@ -891,13 +891,21 @@ void item_unlink(item *item) {
 enum delta_result_type add_delta(conn *c, const char *key,
                                  const size_t nkey, bool incr,
                                  const int64_t delta, char *buf,
+#ifdef MUL
+                                 uint64_t *cas, Mul_type mul) {
+#else
                                  uint64_t *cas) {
+#endif
     enum delta_result_type ret;
     uint32_t hv;
 
     hv = hash(key, nkey);
     item_lock(hv);
+#ifdef MUL
+    ret = do_add_delta(c, key, nkey, incr, delta, buf, cas, hv, NULL, mul);
+#else
     ret = do_add_delta(c, key, nkey, incr, delta, buf, cas, hv, NULL);
+#endif
     item_unlock(hv);
     return ret;
 }

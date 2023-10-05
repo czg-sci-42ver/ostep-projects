@@ -377,6 +377,7 @@ int process_request(mcp_parser_t *pr, const char *command, size_t cmdlen) {
                 token_max = 2; // don't chew through multigets.
                 ret = _process_request_simple(pr, 2);
             } else if (strncmp(cm, "incr", 4) == 0) {
+                printf("_process_request_simple incr\n");
                 cmd = CMD_INCR;
                 ret = _process_request_simple(pr, 4);
             } else if (strncmp(cm, "decr", 4) == 0) {

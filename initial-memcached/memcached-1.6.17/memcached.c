@@ -1835,6 +1835,10 @@ void server_stats(ADD_STAT add_stats, conn *c) {
     APPEND_STAT("incr_hits", "%llu", (unsigned long long)slab_stats.incr_hits);
     APPEND_STAT("decr_misses", "%llu", (unsigned long long)thread_stats.decr_misses);
     APPEND_STAT("decr_hits", "%llu", (unsigned long long)slab_stats.decr_hits);
+    APPEND_STAT("mul_misses", "%llu", (unsigned long long)thread_stats.mul_misses);
+    APPEND_STAT("mul_hits", "%llu", (unsigned long long)slab_stats.mul_hits);
+    APPEND_STAT("div_misses", "%llu", (unsigned long long)thread_stats.div_misses);
+    APPEND_STAT("div_hits", "%llu", (unsigned long long)slab_stats.div_hits);
     APPEND_STAT("cas_misses", "%llu", (unsigned long long)thread_stats.cas_misses);
     APPEND_STAT("cas_hits", "%llu", (unsigned long long)slab_stats.cas_hits);
     APPEND_STAT("cas_badval", "%llu", (unsigned long long)slab_stats.cas_badval);
@@ -2235,7 +2239,11 @@ enum delta_result_type do_add_delta(conn *c, const char *key, const size_t nkey,
                                     const bool incr, const int64_t delta,
                                     char *buf, uint64_t *cas,
                                     const uint32_t hv,
+                                    #ifdef MUL
+                                    item **it_ret,const Mul_type mul) {
+                                    #else
                                     item **it_ret) {
+                                    #endif
     char *ptr;
     uint64_t value;
     int res;
@@ -2268,25 +2276,53 @@ enum delta_result_type do_add_delta(conn *c, const char *key, const size_t nkey,
         do_item_remove(it);
         return NON_NUMERIC;
     }
+#ifdef MUL
+    // assert(mul+incr!=2);
+    if (mul!=NONE_TYPE) {
+        assert(incr==0);
+    }
+#endif
 
     if (incr) {
         value += delta;
         MEMCACHED_COMMAND_INCR(c->sfd, ITEM_key(it), it->nkey, value);
     } else {
-        if(delta > value) {
-            value = 0;
-        } else {
-            value -= delta;
+        if (mul==NONE_TYPE) {
+            if(delta > value) {
+                value = 0;
+            } else {
+                value -= delta;
+            }
+            MEMCACHED_COMMAND_DECR(c->sfd, ITEM_key(it), it->nkey, value);   
         }
-        MEMCACHED_COMMAND_DECR(c->sfd, ITEM_key(it), it->nkey, value);
     }
+#ifdef MUL
+    if (mul==MUL_TYPE) {
+        printf("from %ld",value);
+        value *= delta;
+        printf("to value %ld by delta %ld",value,delta);
+        MEMCACHED_COMMAND_MUL(c->sfd, ITEM_key(it), it->nkey, value);
+    } else if (mul == DIV_TYPE) {
+        value = value/delta;
+        MEMCACHED_COMMAND_DIV(c->sfd, ITEM_key(it), it->nkey, value);
+    }
+#endif
 
     pthread_mutex_lock(&c->thread->stats.mutex);
     if (incr) {
         c->thread->stats.slab_stats[ITEM_clsid(it)].incr_hits++;
     } else {
-        c->thread->stats.slab_stats[ITEM_clsid(it)].decr_hits++;
+        if (mul==NONE_TYPE) {
+            c->thread->stats.slab_stats[ITEM_clsid(it)].decr_hits++;
+        }
     }
+#ifdef MUL
+    if (mul==MUL_TYPE) {
+        c->thread->stats.slab_stats[ITEM_clsid(it)].mul_hits++;
+    } else if (mul == DIV_TYPE) {
+        c->thread->stats.slab_stats[ITEM_clsid(it)].div_hits++;
+    }
+#endif
     pthread_mutex_unlock(&c->thread->stats.mutex);
 
     itoa_u64(value, buf);
@@ -2326,7 +2362,7 @@ enum delta_result_type do_add_delta(conn *c, const char *key, const size_t nkey,
         /* Should never get here. This means we somehow fetched an unlinked
          * item. TODO: Add a counter? */
         if (settings.verbose) {
-            fprintf(stderr, "Tried to do incr/decr on invalid item\n");
+            fprintf(stderr, "Tried to do incr/decr/mul/div on invalid item\n");
         }
         if (it->refcount == 1)
             do_item_remove(it);

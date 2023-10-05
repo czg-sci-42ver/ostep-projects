@@ -305,6 +305,7 @@ static size_t tokenize_command(char *command, token_t *tokens, const size_t max_
         }
         e++;
     }
+    printf("ntokens %ld\n",ntokens);
 
     if (s != e) {
         tokens[ntokens].value = s;
@@ -1524,6 +1525,7 @@ static void process_mset_command(conn *c, token_t *tokens, const size_t ntokens)
 #endif
     c->rlbytes = it->nbytes;
     c->cmd = comm;
+    printf("in process_mset_command, c->cmd to %d\n",c->cmd);
 
     // Prevent printing back the key in meta commands as garbage.
     if (of.key_binary) {
@@ -1754,7 +1756,14 @@ static void process_marithmetic_command(conn *c, token_t *tokens, const size_t n
     // return a referenced item if it exists, so we can modify it here, rather
     // than adding even more parameters to do_add_delta.
     bool item_created = false;
+#ifdef MUL
+/*
+this not used, so default mul 0.
+*/
+    switch(do_add_delta(c, key, nkey, incr, of.delta, tmpbuf, &of.req_cas_id, hv, &it,NONE_TYPE)) {
+#else
     switch(do_add_delta(c, key, nkey, incr, of.delta, tmpbuf, &of.req_cas_id, hv, &it)) {
+#endif
     case OK:
         if (c->noreply)
             resp->skip = true;
@@ -2014,6 +2023,7 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
 #endif
     c->rlbytes = it->nbytes;
     c->cmd = comm;
+    printf("c->cmd update to %d\n",c->cmd);
     conn_set_state(c, conn_nread);
 }
 
@@ -2060,8 +2070,11 @@ static void process_touch_command(conn *c, token_t *tokens, const size_t ntokens
         out_string(c, "NOT_FOUND");
     }
 }
-
+#ifdef MUL
+static void process_arithmetic_command(conn *c, token_t *tokens, const size_t ntokens, const bool incr,Mul_type mul) {
+#else
 static void process_arithmetic_command(conn *c, token_t *tokens, const size_t ntokens, const bool incr) {
+#endif
     char temp[INCR_MAX_STORAGE_LEN];
     uint64_t delta;
     char *key;
@@ -2083,8 +2096,11 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
         out_string(c, "CLIENT_ERROR invalid numeric delta argument");
         return;
     }
-
+#ifdef MUL
+    switch(add_delta(c, key, nkey, incr, delta, temp, NULL, mul)) {
+#else
     switch(add_delta(c, key, nkey, incr, delta, temp, NULL)) {
+#endif
     case OK:
         out_string(c, temp);
         break;
@@ -2101,6 +2117,13 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
         } else {
             c->thread->stats.decr_misses++;
         }
+        #ifdef MUL
+        if (mul) {
+            c->thread->stats.mul_misses++;
+        } else {
+            c->thread->stats.div_misses++;
+        }
+        #endif
         pthread_mutex_unlock(&c->thread->stats.mutex);
 
         out_string(c, "NOT_FOUND");
@@ -2725,6 +2748,7 @@ void process_command_ascii(conn *c, char *command) {
 
     if (settings.verbose > 1)
         fprintf(stderr, "<%d %s\n", c->sfd, command);
+    printf("command %s\n",command);
 
     /*
      * for commands set/add/replace, we build an item and read the data
@@ -2745,10 +2769,12 @@ void process_command_ascii(conn *c, char *command) {
         return;
     }
 
+    printf("token is %s\n",tokens[COMMAND_TOKEN].value);
     // Meta commands are all 2-char in length.
     char first = tokens[COMMAND_TOKEN].value[0];
-    if (first == 'm' && tokens[COMMAND_TOKEN].length == 2) {
-        switch (tokens[COMMAND_TOKEN].value[1]) {
+    if (first == 'm') {
+        if (tokens[COMMAND_TOKEN].length == 2) {
+            switch (tokens[COMMAND_TOKEN].value[1]) {
             case 'g':
                 process_mget_command(c, tokens, ntokens);
                 break;
@@ -2772,6 +2798,17 @@ void process_command_ascii(conn *c, char *command) {
             default:
                 out_string(c, "ERROR");
                 break;
+            }
+        }
+        if (strcmp(tokens[COMMAND_TOKEN].value, "mul") == 0) {
+            WANT_TOKENS_OR(ntokens, 4, 5);
+            #ifdef MUL
+            printf("run mul");
+            process_arithmetic_command(c, tokens, ntokens, 0,MUL_TYPE);
+            #else
+            #endif
+        } else {
+            out_string(c, "ERROR");
         }
     } else if (first == 'g') {
         // Various get commands are very common.
@@ -2833,7 +2870,11 @@ void process_command_ascii(conn *c, char *command) {
         if (strcmp(tokens[COMMAND_TOKEN].value, "incr") == 0) {
 
             WANT_TOKENS_OR(ntokens, 4, 5);
+            #ifdef MUL
+            process_arithmetic_command(c, tokens, ntokens, 1,NONE_TYPE);
+            #else
             process_arithmetic_command(c, tokens, ntokens, 1);
+            #endif
         } else {
             out_string(c, "ERROR");
         }
@@ -2845,11 +2886,20 @@ void process_command_ascii(conn *c, char *command) {
         } else if (strcmp(tokens[COMMAND_TOKEN].value, "decr") == 0) {
 
             WANT_TOKENS_OR(ntokens, 4, 5);
+            #ifdef MUL
+            process_arithmetic_command(c, tokens, ntokens, 0,NONE_TYPE);
+            #else
             process_arithmetic_command(c, tokens, ntokens, 0);
+            #endif
 #ifdef MEMCACHED_DEBUG
         } else if (strcmp(tokens[COMMAND_TOKEN].value, "debugtime") == 0) {
             WANT_TOKENS_MIN(ntokens, 2);
             process_debugtime_command(c, tokens, ntokens);
+#endif
+#ifdef MUL
+        } else if (strcmp(tokens[COMMAND_TOKEN].value, "div") == 0) {
+            WANT_TOKENS_OR(ntokens, 4, 5);
+            process_arithmetic_command(c, tokens, ntokens, 0, DIV_TYPE);
 #endif
         } else {
             out_string(c, "ERROR");

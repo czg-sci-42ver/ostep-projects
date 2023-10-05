@@ -56,6 +56,7 @@ int try_read_command_binary(conn *c) {
         return 0;
     } else {
         memcpy(&c->binary_header, c->rcurr, sizeof(c->binary_header));
+        printf("opcode %d\n",c->binary_header.request.opcode);
         protocol_binary_request_header* req;
         req = &c->binary_header;
 
@@ -294,9 +295,14 @@ static void complete_incr_bin(conn *c, char *extbuf) {
     if (c->binary_header.request.cas != 0) {
         cas = c->binary_header.request.cas;
     }
+    printf("c->cmd == PROTOCOL_BINARY_CMD_INCREMENT %d\n",c->cmd == PROTOCOL_BINARY_CMD_INCREMENT);
     switch(add_delta(c, key, nkey, c->cmd == PROTOCOL_BINARY_CMD_INCREMENT,
                      req->message.body.delta, tmpbuf,
+#ifdef MUL
+                    &cas,3)){
+#else
                      &cas)) {
+#endif
     case OK:
         rsp->message.body.value = htonll(strtoull(tmpbuf, NULL, 10));
         if (cas) {
@@ -925,6 +931,7 @@ static void dispatch_bin_command(conn *c, char *extbuf) {
         break;
     case PROTOCOL_BINARY_CMD_INCREMENTQ:
         c->cmd = PROTOCOL_BINARY_CMD_INCREMENT;
+        printf("c->cmd = PROTOCOL_BINARY_CMD_INCREMENT\n");
         break;
     case PROTOCOL_BINARY_CMD_DECREMENTQ:
         c->cmd = PROTOCOL_BINARY_CMD_DECREMENT;
@@ -1009,6 +1016,7 @@ static void dispatch_bin_command(conn *c, char *extbuf) {
             break;
         case PROTOCOL_BINARY_CMD_INCREMENT:
         case PROTOCOL_BINARY_CMD_DECREMENT:
+        // case PROTOCOL_BINARY_CMD_DECREMENT:
             if (keylen > 0 && extlen == 20 && bodylen == (keylen + extlen)) {
                 complete_incr_bin(c, extbuf);
             } else {

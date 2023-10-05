@@ -131,8 +131,10 @@ extern "C"
         PROTOCOL_BINARY_CMD_RINCR     = 0x39,
         PROTOCOL_BINARY_CMD_RINCRQ    = 0x3a,
         PROTOCOL_BINARY_CMD_RDECR     = 0x3b,
-        PROTOCOL_BINARY_CMD_RDECRQ    = 0x3c
+        PROTOCOL_BINARY_CMD_RDECRQ    = 0x3c,
         /* End Range operations */
+        PROTOCOL_BINARY_CMD_MUL = 0x3d,
+        PROTOCOL_BINARY_CMD_DIV = 0x3e,
 
     } protocol_binary_command;
 
