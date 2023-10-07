@@ -8,7 +8,7 @@ OBJS   := ${SRCS:c=o}
 PROGS  := ${SRCS:.c=}
 
 LIB=../libmfs.so
-.PHONY: all ${LIB}
+.PHONY: all ${LIB} ${PROGS}
 all: ${LIB} ${PROGS} 
 ${LIB}:
 	make -C ..
@@ -18,7 +18,7 @@ ${PROGS} : % : %.o Makefile
 # https://stackoverflow.com/a/8426110/21294350
 # https://stackoverflow.com/a/15727498/21294350 see `man ld`
 	$(shell if [[ -f fs.img ]];then rm fs.img;fi)
-	${CC} $< -o $@ udp.c -L$(shell dirname "${PWD}") -l:libmfs.so
+	${CC} ${CFLAGS} $< -o $@ udp.c -L$(shell dirname "${PWD}") -l:libmfs.so
 
 clean:
 	rm -f ${PROGS} ${OBJS}

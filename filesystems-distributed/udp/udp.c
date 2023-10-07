@@ -22,6 +22,7 @@ int UDP_Open(int port) {
     close(fd);
     return -1;
   }
+  assert(fd != -1);
 
   return fd;
 }
