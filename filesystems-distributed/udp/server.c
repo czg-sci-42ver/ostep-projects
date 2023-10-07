@@ -42,7 +42,12 @@ void *file_mmap(FILE *img_stream) {
   */
   Ftruncate(fd, IMG_SIZE);
 
-  void *img_ptr = mmap(0, IMG_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+  /*
+  here MAP_PRIVATE is no use.
+  > When the msync() function is called on MAP_PRIVATE mappings, any modified
+  data shall not be writ ...
+  */
+  void *img_ptr = mmap(0, IMG_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   assert(img_ptr != NULL);
   assert(fclose(img_stream) != EOF);
   return img_ptr;
@@ -63,7 +68,9 @@ UPDATE_PDIR append_dir_contents(MFS_DirEnt_t *dir_entry, Inode *pinode_ptr,
   uint single_imap_offset = pinode_ptr->size % BSIZE;
   uint end_block_index = pinode_ptr->size / BSIZE;
   UPDATE_PDIR ret = OVERWRITE;
-  ck_ptr->log_end.block++;
+  if (ck_ptr->log_end.offset != 0) {
+    ck_ptr->log_end.block++; // use one whole new block for the data.
+  };
   uint old_end_block = pinode_ptr->data_ptr[end_block_index];
   if (single_imap_offset == 0) {
     pinode_ptr->data_ptr[++end_block_index] = ck_ptr->log_end.block;
@@ -71,6 +78,11 @@ UPDATE_PDIR append_dir_contents(MFS_DirEnt_t *dir_entry, Inode *pinode_ptr,
   } else {
     pinode_ptr->data_ptr[end_block_index] = ck_ptr->log_end.block;
   }
+  /*
+  mark the current block has been used and update the offset to point to that.
+  */
+  ck_ptr->log_end.block++;
+  ck_ptr->log_end.offset = 0;
   assert(end_block_index <= DIRECT_POINTER_SIZE);
   tmp_iaddr.offset = 0;
   tmp_iaddr.block = pinode_ptr->data_ptr[end_block_index];
@@ -140,7 +152,6 @@ void create_dir(int pinum, int dinum, void *img_ptr, Inode *dir_inode,
   MFS_DirEnt_t dot_dot = {"..", pinum};
   uint tmp_data_block = ck_ptr->log_end.block;
   dir_inode->data_ptr[0] = ck_ptr->log_end.block++;
-  ck_ptr->log_end.offset = 0;
   dir_inode->size = sizeof(MFS_DirEnt_t) * 2;
   dir_inode->type = DIRECTORY;
   memmove(img_ptr + BSIZE * tmp_data_block, &dot, sizeof(MFS_DirEnt_t));
@@ -350,12 +361,12 @@ void read_img(void *img_ptr, Inode_Map (*imap_ptr)[MAP_MAX_SIZE],
         BSIZE *
             checkpoint_ptr->imap_addr[imap_global_index.map_end_index].block +
         checkpoint_ptr->imap_addr[imap_global_index.map_end_index].offset;
+    if (global_offset == 0) {
+      break;
+    }
     read_ptr = img_ptr + global_offset;
     assert((void *)read_ptr <=
            img_ptr + BSIZE * imap_end.block + imap_end.offset);
-    if (*read_ptr == 0) {
-      break;
-    }
     memmove(&imap_ptr[imap_global_index.map_end_index++], read_ptr,
             sizeof(Inode_Map));
   }
@@ -860,8 +871,9 @@ int main(int argc, char *argv[]) {
       char *filetype = strsep(&sep_ptr, ",");
       char *name = strsep(&sep_ptr, ",");
       assert(sep_ptr == NULL);
-      creat_file_lfs(pinum, filetype, name, &imap_gbl, &checkpoint,
-                     mmap_file_ptr);
+      ret = creat_file_lfs(pinum, filetype, name, &imap_gbl, &checkpoint,
+                           mmap_file_ptr);
+      send_ret(reply, ret);
     }
   }
   if (munmap(mmap_file_ptr, IMG_SIZE) == -1) {

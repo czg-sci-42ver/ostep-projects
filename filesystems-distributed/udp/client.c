@@ -20,6 +20,12 @@ int main(int argc, char *argv[]) {
   if (rc == -1) {
     exit(EXIT_FAILURE);
   }
+
+  rc = MFS_Creat(ROOT_INUM, REGULAR_FILE, "foo");
+  if (rc == -1) {
+    exit(EXIT_FAILURE);
+  }
+
   char data_to_send[BSIZE] = {0};
   sprintf(data_to_send, "test first\n");
   rc = MFS_Write(2, data_to_send, 10);

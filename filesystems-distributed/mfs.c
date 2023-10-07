@@ -83,7 +83,7 @@ int MFS_Stat(int inum, MFS_Stat_t *m) {
   check_inum(inum);
   sprintf(message, "Stat,%d", inum);
   resend_if_fail(message, read_buf);
-  char *size_str, *type_str = message;
+  char *size_str, *type_str = read_buf;
   size_str = strsep(&type_str, ",");
   if (type_str != NULL) {
     m->size = atoi(size_str);
@@ -91,8 +91,8 @@ int MFS_Stat(int inum, MFS_Stat_t *m) {
                   ? REGULAR_FILE
                   : DIRECTORY;
     sprintf(message, "%d,%s", m->size, type_str);
-    printf("client:: got reply in MFS_Stat [ret:%d contents:(%s)\n", 0,
-           read_buf);
+    printf("client:: got reply in MFS_Stat [ret:%d contents:(%d,%s)\n", 0,
+           m->size, type_str);
     return 0;
   } else {
     printf("MFS_Stat: error\n");
