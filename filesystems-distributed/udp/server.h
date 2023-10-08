@@ -14,3 +14,6 @@ Block_Offset_Addr *get_inum_index(uint inum, Map_Num_Index_Map *map,
                                   Inode_Map (*imap)[MAP_MAX_SIZE]);
 static inline Inode_Map *array_ptr_to_elem_ptr(Inode_Map (*imap)[MAP_MAX_SIZE],
                                                uint index);
+uint modify_inode_addr(Inode_Map (*imap)[MAP_MAX_SIZE],
+                       Map_Num_Index_Map *dir_index, uint target_data_block,
+                       uint offset, Block_Offset_Addr **target_inode_addr);

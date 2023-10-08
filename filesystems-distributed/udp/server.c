@@ -15,18 +15,20 @@ LFS
 /*
 https://stackoverflow.com/a/4146406/21294350
 */
-uint block_index_gbl;
 static Inode_Map imap_gbl[MAP_MAX_SIZE];
 static Checkpoint checkpoint;
 static Map_Num_Entry_Map imap_global_index;
 static void *mmap_file_ptr;
-static Block_Offset_Addr *tmp_inode_addr;
-static Inode inode_inst;
 
 /*
-this is temporary variable to record the current imap access index.
+these are temporary variable which doesn't needs from main to its called
+functions.
+1. imaps_index_map is to record the current imap access index.
+so most of time no need to pass its state across functions.
 */
 static Map_Num_Index_Map imaps_index_map;
+static Inode inode_inst;
+static Block_Offset_Addr *tmp_inode_addr;
 
 void *file_mmap(FILE *img_stream) {
   int fd = fileno(img_stream);
@@ -53,7 +55,29 @@ void *file_mmap(FILE *img_stream) {
   return img_ptr;
 }
 
-void append_imap(Inode_Map *imap, Checkpoint *ck_ptr) {}
+/*
+similar to search_dir
+*/
+uint search_invalid_dir_entry(Inode *pinode_ptr) {
+  uint offset_loc = 0, ptr_index = 0;
+  MFS_DirEnt_t dir_entry;
+  while (offset_loc != pinode_ptr->size) {
+    /*
+    this branch has some overheads if CPU branch predicter is not good
+    it can be removed by changing the `offset_loc!=inode_inst.size` condition.
+    */
+    if (offset_loc % BSIZE == 0 && offset_loc != 0) {
+      ptr_index++;
+    }
+    read_data(&dir_entry, mmap_file_ptr, pinode_ptr->data_ptr[ptr_index],
+              offset_loc % BSIZE, sizeof(MFS_DirEnt_t));
+    if (dir_entry.inum == -1) {
+      return offset_loc;
+    }
+    offset_loc += sizeof(MFS_DirEnt_t);
+  }
+  return -1;
+}
 
 /*
 1. must call after create_dir, so size will not be 0.
@@ -65,14 +89,24 @@ data block to use `data_ptr` in Inode.
 UPDATE_PDIR append_dir_contents(MFS_DirEnt_t *dir_entry, Inode *pinode_ptr,
                                 void *img_ptr, Checkpoint *ck_ptr) {
   Block_Offset_Addr tmp_iaddr;
-  uint single_imap_offset = pinode_ptr->size % BSIZE;
-  uint end_block_index = pinode_ptr->size / BSIZE;
+  uint target_offset = search_invalid_dir_entry(pinode_ptr);
+  /*
+  here for simplicity, all inits are not dependent on the `reuse_offset`.
+  */
+  if (target_offset == -1) {
+    target_offset = pinode_ptr->size;
+  }
+  uint single_imap_offset = target_offset % BSIZE;
+  uint end_block_index = target_offset / BSIZE;
   UPDATE_PDIR ret = OVERWRITE;
   if (ck_ptr->log_end.offset != 0) {
     ck_ptr->log_end.block++; // use one whole new block for the data.
   };
   uint old_end_block = pinode_ptr->data_ptr[end_block_index];
-  if (single_imap_offset == 0) {
+  /*
+  pinode use the new block.
+  */
+  if (single_imap_offset == 0 && target_offset == -1) {
     pinode_ptr->data_ptr[++end_block_index] = ck_ptr->log_end.block;
     ret = APPEND;
   } else {
@@ -92,8 +126,11 @@ UPDATE_PDIR append_dir_contents(MFS_DirEnt_t *dir_entry, Inode *pinode_ptr,
   */
   Block_Offset_Addr *tmp_ptr = &tmp_iaddr;
   if (ret == OVERWRITE) {
+    /*
+    move the old block to the new one.
+    */
     write_block_offset(mmap_file_ptr + BSIZE * old_end_block, mmap_file_ptr,
-                       tmp_ptr, pinode_ptr->size);
+                       tmp_ptr, BSIZE);
   }
   tmp_iaddr.offset = single_imap_offset;
   pinode_ptr->size += sizeof(MFS_DirEnt_t);
@@ -151,6 +188,9 @@ void create_dir(int pinum, int dinum, void *img_ptr, Inode *dir_inode,
   MFS_DirEnt_t dot_dot = {"..", pinum};
   /*
   always one whole new data block
+  notice only init ck_ptr->log_end.offset may be 0
+  because the inodes and imaps are always written at last so offset should not
+  be 0.
   */
   if (ck_ptr->log_end.offset != 0) {
     ck_ptr->log_end.block++;
@@ -227,7 +267,8 @@ void add_entry_to_imap(Map_Num_Entry_Map *num_entry_map,
                        Inode_Map (*imap_ptr)[MAP_MAX_SIZE], int *inum,
                        Checkpoint *ck_ptr, void *img_ptr,
                        Inode **inode_inst_list, uint inode_num) {
-  assert(ck_ptr->log_end.offset == 0);
+  assert(ck_ptr->log_end.offset == 0); // because after data blocks, the inodes
+                                       // and imaps should be in one new block.
   assert(inode_num == 2 || inode_num == 1);
   Map_Num_Index_Map tmp_map;
   if (inode_num == 2) {
@@ -416,19 +457,6 @@ Block_Offset_Addr *get_inum_index(uint inum, Map_Num_Index_Map *map,
   map->index = -1;
   return NULL; // means not found related inode block addr.
 }
-
-// int check_inode_type(Inode inode_inst, void *img_ptr,
-//                      Block_Offset_Addr *block_ptr, uint size,
-//                      File_Type target_type) {
-//   read_inode(inode_inst, img_ptr, block_ptr, size);
-//   if (inode_inst.type != target_type) {
-//     /*
-//     invalid pinum
-//     */
-//     return -1;
-//   }
-//   return 0;
-// }
 
 int lookup_lfs(int pinum, char *name, Inode_Map (*imap)[MAP_MAX_SIZE]) {
   /*
@@ -632,10 +660,9 @@ int write_lfs(int inum, int block, Inode_Map (*imap)[MAP_MAX_SIZE],
     inode_inst.data_ptr[i] = target_data_block; // add one data block
     inode_inst.size += BSIZE;
   }
-  Block_Offset_Addr *target_inode_addr = get_inode_addr(&imaps_index_map, imap);
-  uint old_block = target_inode_addr->block;
-  target_inode_addr->block = target_data_block + 1;
-  target_inode_addr->offset = 0;
+  Block_Offset_Addr *target_inode_addr = NULL;
+  uint old_block = modify_inode_addr(
+      imap, &imaps_index_map, target_data_block + 1, 0, &target_inode_addr);
   write_data_inode_imap_checkpoint(
       target_inode_addr, &inode_inst, block_buf, imap, old_block, &checkpoint,
       &imaps_index_map, mmap_file_ptr, num_entry_map);
@@ -711,31 +738,34 @@ void send_ret(char *reply, int ret) {
   UDP_Write(sd, &addr, reply, BUFFER_SIZE);
 }
 
-int search_dir(char *file_name, Inode *pinode_ptr) {
-  uint offset = 0, ptr_index = 0;
-  MFS_DirEnt_t dir_entry;
+/*
+https://softwareengineering.stackexchange.com/a/127990
+naming local variables
+*/
+int search_dir(char *file_name, Inode *pinode_ptr, MFS_DirEnt_t *dir_entry,
+               uint *offset) {
+  uint offset_loc = *offset, ptr_index = 0;
+  assert(offset_loc == 0);
   /*
   1. this is to send the all directory data when multiple blocks instead of one
   specific.
   2. this is originally for read_lfs with `to_send`, etc.
   */
-  while (offset != pinode_ptr->size) {
+  while (offset_loc != pinode_ptr->size) {
     /*
     this branch has some overheads if CPU branch predicter is not good
-    it can be removed by changing the `offset!=inode_inst.size` condition.
+    it can be removed by changing the `offset_loc!=inode_inst.size` condition.
     */
-    // if (offset!=0) {
-    //   strncat(to_send, "\n",1);
-    // }
-    read_data(&dir_entry, mmap_file_ptr, pinode_ptr->data_ptr[ptr_index],
-              offset % BSIZE, sizeof(MFS_DirEnt_t));
-    if (offset % BSIZE == 0 && offset != 0) {
+    if (offset_loc % BSIZE == 0 && offset_loc != 0) {
       ptr_index++;
     }
-    if (strncmp(dir_entry.name, file_name, strlen(file_name)) == 0) {
+    read_data(dir_entry, mmap_file_ptr, pinode_ptr->data_ptr[ptr_index],
+              offset_loc % BSIZE, sizeof(MFS_DirEnt_t));
+    if (strncmp(dir_entry->name, file_name, strlen(file_name)) == 0) {
+      *offset = offset_loc;
       return 0;
     }
-    offset += sizeof(MFS_DirEnt_t);
+    offset_loc += sizeof(MFS_DirEnt_t);
   }
   return -1;
 }
@@ -793,8 +823,10 @@ int creat_file_lfs(int pinum, char *type, char *name,
     return -1;
   }
   check_inum_exist(pinum, tmp_inode_addr, imaps_index_map, imap);
-  read_inode(inode_inst, mmap_file_ptr, tmp_inode_addr, sizeof(Inode));
-  int ret = search_dir(name, &inode_inst);
+  read_inode(inode_inst, img_ptr, tmp_inode_addr, sizeof(Inode));
+  MFS_DirEnt_t dir_entry;
+  uint offset = 0;
+  int ret = search_dir(name, &inode_inst, &dir_entry, &offset);
   /*
   find one existing entry.
   */
@@ -807,19 +839,87 @@ int creat_file_lfs(int pinum, char *type, char *name,
     /*
     1. here for simplicity use the consecutive inum.
     */
-    // create_dir(ROOT_INUM,inum,mmap_file_ptr,checkpoint.log_end.block+1);
-    create_dir_update_pdir(pinum, inum, mmap_file_ptr, name, &inode_inst,
-                           ck_ptr, num_entry_map, &file_inode);
+    create_dir_update_pdir(pinum, inum, img_ptr, name, &inode_inst, ck_ptr,
+                           num_entry_map, &file_inode);
     creat_update_imap_ck(pinum, inum, &file_inode, &inode_inst, imap, ck_ptr,
                          img_ptr, &imaps_index_map, num_entry_map);
   } else if (strncmp(type, REGULAR_FILE_STR, strlen(REGULAR_FILE_STR)) == 0) {
-    create_file_update_pdir(inum, mmap_file_ptr, name, &inode_inst, ck_ptr,
+    create_file_update_pdir(inum, img_ptr, name, &inode_inst, ck_ptr,
                             &file_inode);
     creat_update_imap_ck(pinum, inum, &file_inode, &inode_inst, imap, ck_ptr,
                          img_ptr, &imaps_index_map, num_entry_map);
   }
   sync_file(img_ptr, IMG_SIZE);
   return 0;
+}
+
+uint modify_inode_addr(Inode_Map (*imap)[MAP_MAX_SIZE],
+                       Map_Num_Index_Map *dir_index, uint target_data_block,
+                       uint offset, Block_Offset_Addr **target_inode_addr_ptr) {
+  Block_Offset_Addr *target_inode_addr = *target_inode_addr_ptr;
+  target_inode_addr = get_inode_addr(dir_index, imap);
+  uint old_block = target_inode_addr->block;
+  target_inode_addr->block = target_data_block;
+  target_inode_addr->offset = offset;
+  *target_inode_addr_ptr = target_inode_addr;
+  return old_block;
+}
+
+/*
+> For directory entries that are not yet in use (in an allocated 4-KB directory
+block), the inode number should be set to -1. > This way, utilities can scan
+through the entries to check if they are valid.
+*/
+int unlink_file_lfs(int pinum, char *name, Inode_Map (*imap)[MAP_MAX_SIZE],
+                    Checkpoint *ck_ptr, void *img_ptr,
+                    Map_Num_Entry_Map *num_entry_map) {
+  Map_Num_Index_Map dir_index;
+  check_inum_exist(pinum, tmp_inode_addr, dir_index, imap);
+  read_inode(inode_inst, img_ptr, tmp_inode_addr, sizeof(Inode));
+  MFS_DirEnt_t dir_entry;
+  uint offset = 0;
+  int ret = search_dir(name, &inode_inst, &dir_entry, &offset);
+  /*
+  > Note that the name not existing is NOT a failure by our definition
+  just similar to `rm not_exist_file` which only warns but not throw errors.
+  */
+  Inode file_inode;
+  check_inum_exist(dir_entry.inum, tmp_inode_addr, imaps_index_map, imap);
+  read_inode(file_inode, img_ptr, tmp_inode_addr, sizeof(Inode));
+  if (file_inode.size == 0 && file_inode.type == DIRECTORY) {
+    return -1;
+  }
+  dir_entry.inum = -1;
+  memset(dir_entry.name, 0, sizeof(dir_entry.name));
+  assert(ck_ptr->log_end.offset != 0); // ensure img has been inited
+  uint orig_block_index = offset / BSIZE;
+  ck_ptr->log_end.block++;
+  ck_ptr->log_end.offset = 0;
+  uint target_data_block = ck_ptr->log_end.block;
+  /*
+  data
+  TODO here invalid entry is kept, but I first write `MFS_Creat`, then
+  `MFS_Unlink`, so I didn't reuse the invalid entry.
+  */
+  memmove(img_ptr + BSIZE * (target_data_block),
+          img_ptr + BSIZE * (inode_inst.data_ptr[orig_block_index]), BSIZE);
+  memmove(img_ptr + BSIZE * (target_data_block) + offset % BSIZE, &dir_entry,
+          sizeof(MFS_DirEnt_t));
+  /*
+  inode
+  */
+  inode_inst.data_ptr[orig_block_index] = target_data_block;
+  move_inode_update_ck(&inode_inst, img_ptr, ck_ptr);
+  /*
+  imap
+  */
+  Block_Offset_Addr *target_inode_addr = NULL;
+  modify_inode_addr(imap, &dir_index, target_data_block, 0, &target_inode_addr);
+  Inode_Map *file_imap = array_ptr_to_elem_ptr(imap, imaps_index_map.map_num);
+  file_imap->maps[imaps_index_map.index].inum = -1; // mark unlinked.
+  // modify_inode_addr(imap,&imaps_index_map,target_data_block,0,target_inode_addr);
+
+  return ret;
 }
 
 // server code
@@ -923,6 +1023,13 @@ int main(int argc, char *argv[]) {
       assert(sep_ptr == NULL);
       ret = creat_file_lfs(pinum, filetype, name, &imap_gbl, &checkpoint,
                            mmap_file_ptr, &imap_global_index);
+      send_ret(reply, ret);
+    } else if (strncmp(tmp_str, "Unlink", strlen("Unlink") + 1) == 0) {
+      pinum = atoi(strsep(&sep_ptr, ","));
+      char *name = strsep(&sep_ptr, ",");
+      assert(sep_ptr == NULL);
+      ret = unlink_file_lfs(pinum, name, &imap_gbl, &checkpoint, mmap_file_ptr,
+                            &imap_global_index);
       send_ret(reply, ret);
     }
   }
