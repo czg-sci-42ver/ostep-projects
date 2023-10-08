@@ -35,9 +35,9 @@ int main(int argc, char *argv[]) {
   uint inum = ROOT_INUM;
   /*
   Since the following `rc = MFS_Unlink(ROOT_INUM, "foo");` unlinks the file,
-  when rerun this `MFS_Creat`, the file will be written after the checkpoint log_end,
-  so the following `MFS_Write(inum, data_to_send, end_block + 1);` will throw error 
-  because it writes to one wrong block address.
+  when rerun this `MFS_Creat`, the file will be written after the checkpoint
+  log_end, so the following `MFS_Write(inum, data_to_send, end_block + 1);` will
+  throw error because it writes to one wrong block address.
   */
   rc = MFS_Creat(ROOT_INUM, REGULAR_FILE, "foo");
   inum++;
@@ -46,6 +46,9 @@ int main(int argc, char *argv[]) {
   4 -> file inode, root inode and related imap
   */
   end_block += 2;
+  check_rc(rc);
+
+  rc = MFS_Stat(ROOT_INUM, &file_stat);
   check_rc(rc);
 
   char data_to_send[BSIZE] = {0};
@@ -140,6 +143,20 @@ int main(int argc, char *argv[]) {
   end_block += 2;
   check_rc(rc);
 
+  memset(data_to_send, 0, BSIZE);
+  sprintf(data_to_send, "test third\n");
+  rc = MFS_Write(inum, data_to_send, end_block + 1);
+  /*
+  12-> file data
+  13(0xd)-> file inode and related imap
+  */
+  end_block += 2;
+  check_rc(rc);
+
+  memset(data_to_send, 0, BSIZE);
+  rc = MFS_Read(inum, data_to_send, end_block - 1);
+  check_rc(rc);
+
   rc = MFS_Lookup(ROOT_INUM, "baz");
   check_rc(rc);
 
@@ -153,12 +170,16 @@ int main(int argc, char *argv[]) {
   check_rc(rc);
 
   /*
-  20(0x14)-> new pdir data block
+  1. 20(0x14)-> new pdir data block
   21(0x15)-> pdir inode and imaps related with pdir and the file (maybe only one
   imap if they are same imap.)
+  2. See server.c "so pinode size doesn't ..." this doesn't modify pinode size property.
   */
   rc = MFS_Unlink(ROOT_INUM, "bar");
   end_block += 2;
+  check_rc(rc);
+
+  rc = MFS_Stat(ROOT_INUM, &file_stat);
   check_rc(rc);
 
   return 0;
