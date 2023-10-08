@@ -154,4 +154,18 @@ int MFS_Creat(int pinum, int type, char *name) {
   }
 }
 
-void write_inode() {}
+int MFS_Unlink(int pinum, char *name) {
+  check_inum(pinum);
+  sprintf(message, "Unlink,%d,%s", pinum, name);
+  resend_if_fail(message, read_buf);
+  int ret = atoi(read_buf);
+  char func_str[20] = "MFS_Unlink";
+  if (ret != -1) {
+    printf("client:: got reply in %s [ret:%d contents:(%s)]\n", func_str, 0,
+           read_buf);
+    return 0;
+  } else {
+    printf("%s: error\n", func_str);
+    return -1;
+  }
+}

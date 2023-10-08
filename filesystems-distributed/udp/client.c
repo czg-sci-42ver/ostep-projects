@@ -8,6 +8,8 @@ void check_rc(int rc) {
   }
 }
 
+void error_log() { fprintf(stderr, "The following one should fail\n"); }
+
 // client code
 int main(int argc, char *argv[]) {
   /*
@@ -43,8 +45,8 @@ int main(int argc, char *argv[]) {
   char data_to_send[BSIZE] = {0};
   sprintf(data_to_send, "test first\n");
 #ifdef TEST_FAIL_WRITE
+  error_log();
   rc = MFS_Write(inum, data_to_send, 10); // should fail
-  check_rc(rc);
 #endif
   rc = MFS_Write(inum, data_to_send, end_block + 1);
   /*
@@ -59,8 +61,8 @@ int main(int argc, char *argv[]) {
   /*
   should fail because I write to the consecutive block after Checkpoint->log_end
   */
+  error_log();
   rc = MFS_Read(inum, data_to_send, 10);
-  check_rc(rc);
 #endif
   rc = MFS_Read(inum, data_to_send, end_block - 1);
   check_rc(rc);
@@ -102,6 +104,42 @@ int main(int argc, char *argv[]) {
   check_rc(rc);
 
   rc = MFS_Stat(inum, &file_stat); // /bar/foo
+  check_rc(rc);
+
+  error_log();
+  rc = MFS_Unlink(ROOT_INUM, "bar");
+
+  /*
+  -> new pdir data block
+  -> pdir inode and imaps related with pdir and the file
+  */
+  rc = MFS_Unlink(ROOT_INUM, "foo");
+  end_block += 2;
+  check_rc(rc);
+
+  error_log();
+  rc = MFS_Lookup(ROOT_INUM, "foo");
+
+  /*
+  1. foo bar ...
+  https://en.wikipedia.org/wiki/Metasyntactic_variable#General_usage
+  2. this should use the invalid inum of foo -> 1.
+  */
+  rc = MFS_Creat(ROOT_INUM, REGULAR_FILE, "baz");
+  /*
+  14-> new root data
+  15-> file inode, root inode and related imap
+  */
+  end_block += 2;
+  check_rc(rc);
+
+  rc = MFS_Lookup(ROOT_INUM, "baz");
+  check_rc(rc);
+
+  rc = MFS_Unlink(inum - 1, "foo");
+  check_rc(rc);
+
+  rc = MFS_Unlink(ROOT_INUM, "bar");
   check_rc(rc);
 
   return 0;

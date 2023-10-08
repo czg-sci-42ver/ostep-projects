@@ -58,9 +58,14 @@ void *file_mmap(FILE *img_stream) {
 /*
 similar to search_dir
 */
-uint search_invalid_dir_entry(Inode *pinode_ptr) {
+uint search_invalid_dir_entry(Inode *pinode_ptr, int *invalid_cnt) {
   uint offset_loc = 0, ptr_index = 0;
   MFS_DirEnt_t dir_entry;
+  uint invalid_cnt_loc = *invalid_cnt;
+  uint check_cnt = 0;
+  if (invalid_cnt_loc == 0) {
+    check_cnt = 1;
+  }
   while (offset_loc != pinode_ptr->size) {
     /*
     this branch has some overheads if CPU branch predicter is not good
@@ -72,10 +77,15 @@ uint search_invalid_dir_entry(Inode *pinode_ptr) {
     read_data(&dir_entry, mmap_file_ptr, pinode_ptr->data_ptr[ptr_index],
               offset_loc % BSIZE, sizeof(MFS_DirEnt_t));
     if (dir_entry.inum == -1) {
-      return offset_loc;
+      if (check_cnt) {
+        invalid_cnt_loc++;
+      } else {
+        return offset_loc;
+      }
     }
     offset_loc += sizeof(MFS_DirEnt_t);
   }
+  *invalid_cnt = invalid_cnt_loc;
   return -1;
 }
 
@@ -89,7 +99,8 @@ data block to use `data_ptr` in Inode.
 UPDATE_PDIR append_dir_contents(MFS_DirEnt_t *dir_entry, Inode *pinode_ptr,
                                 void *img_ptr, Checkpoint *ck_ptr) {
   Block_Offset_Addr tmp_iaddr;
-  uint target_offset = search_invalid_dir_entry(pinode_ptr);
+  int invalid_cnt = -1;
+  uint target_offset = search_invalid_dir_entry(pinode_ptr, &invalid_cnt);
   /*
   here for simplicity, all inits are not dependent on the `reuse_offset`.
   */
@@ -262,6 +273,7 @@ addr, here we don't depend on it to make functions less dependent.
 4. inum and inode_inst_list should correspond to each other.
   assume the (dinum,pinum) order.
 5. here the inodes are written first, then imap.
+6. this will update the Checkpoint.
 */
 void add_entry_to_imap(Map_Num_Entry_Map *num_entry_map,
                        Inode_Map (*imap_ptr)[MAP_MAX_SIZE], int *inum,
@@ -332,7 +344,9 @@ void static inline memmove_imap(Checkpoint *check_region, uint imap_index,
 }
 
 /*
-assume inode map always stored last.
+1. assume inode map always stored last.
+2. This just write, the related modification of ck_ptr offset should be done by
+the caller.
 */
 void write_checkpoint_and_EndImap(Checkpoint *ck_ptr,
                                   Map_Num_Entry_Map *num_entry_map,
@@ -853,6 +867,9 @@ int creat_file_lfs(int pinum, char *type, char *name,
   return 0;
 }
 
+/*
+based on `get_inode_addr` this will change data stored in imap.
+*/
 uint modify_inode_addr(Inode_Map (*imap)[MAP_MAX_SIZE],
                        Map_Num_Index_Map *dir_index, uint target_data_block,
                        uint offset, Block_Offset_Addr **target_inode_addr_ptr) {
@@ -883,14 +900,31 @@ int unlink_file_lfs(int pinum, char *name, Inode_Map (*imap)[MAP_MAX_SIZE],
   > Note that the name not existing is NOT a failure by our definition
   just similar to `rm not_exist_file` which only warns but not throw errors.
   */
+  if (ret == -1) { // not found
+    return 0;
+  }
   Inode file_inode;
   check_inum_exist(dir_entry.inum, tmp_inode_addr, imaps_index_map, imap);
   read_inode(file_inode, img_ptr, tmp_inode_addr, sizeof(Inode));
-  if (file_inode.size == 0 && file_inode.type == DIRECTORY) {
-    return -1;
+  if (file_inode.type == DIRECTORY) {
+    int invalid_cnt = 0;
+    search_invalid_dir_entry(&file_inode, &invalid_cnt);
+
+    if (invalid_cnt * sizeof(MFS_DirEnt_t) !=
+        (file_inode.size - 2 * sizeof(MFS_DirEnt_t))) {
+      return -1;
+    }
   }
+  /*
+  1. since here only invalidate instead of remove, so pinode size doesn't
+  change.
+  2. if removing one entry inside the multiple data block,
+  then all later blocks need to be move backward, this overhead is a little
+  high, so I only invalidate.
+  */
   dir_entry.inum = -1;
   memset(dir_entry.name, 0, sizeof(dir_entry.name));
+
   assert(ck_ptr->log_end.offset != 0); // ensure img has been inited
   uint orig_block_index = offset / BSIZE;
   ck_ptr->log_end.block++;
@@ -898,8 +932,6 @@ int unlink_file_lfs(int pinum, char *name, Inode_Map (*imap)[MAP_MAX_SIZE],
   uint target_data_block = ck_ptr->log_end.block;
   /*
   data
-  TODO here invalid entry is kept, but I first write `MFS_Creat`, then
-  `MFS_Unlink`, so I didn't reuse the invalid entry.
   */
   memmove(img_ptr + BSIZE * (target_data_block),
           img_ptr + BSIZE * (inode_inst.data_ptr[orig_block_index]), BSIZE);
@@ -909,17 +941,52 @@ int unlink_file_lfs(int pinum, char *name, Inode_Map (*imap)[MAP_MAX_SIZE],
   inode
   */
   inode_inst.data_ptr[orig_block_index] = target_data_block;
+  ck_ptr->log_end.block++;
+  uint inode_imap_block = ck_ptr->log_end.block;
   move_inode_update_ck(&inode_inst, img_ptr, ck_ptr);
   /*
-  imap
+  imap and checkpoint
+  use imap to unlink the file data and file inode, and let the cleaner reset
+  these blocks later.
+  1. modify the imap data
   */
   Block_Offset_Addr *target_inode_addr = NULL;
-  modify_inode_addr(imap, &dir_index, target_data_block, 0, &target_inode_addr);
+  modify_inode_addr(imap, &dir_index, inode_imap_block, 0,
+                    &target_inode_addr); // dir imap
   Inode_Map *file_imap = array_ptr_to_elem_ptr(imap, imaps_index_map.map_num);
-  file_imap->maps[imaps_index_map.index].inum = -1; // mark unlinked.
-  // modify_inode_addr(imap,&imaps_index_map,target_data_block,0,target_inode_addr);
+  file_imap->maps[imaps_index_map.index].inum =
+      -1; // mark unlinked. See `get_inum_index` how this works.
 
-  return ret;
+  /*
+  write the imaps
+  */
+  uint target_map_num = dir_index.map_num;
+  Inode_Map *dir_imap = array_ptr_to_elem_ptr(imap, target_map_num);
+  ck_ptr->imap_addr[target_map_num].block = inode_imap_block;
+  assert(ck_ptr->log_end.offset == sizeof(Inode));
+  ck_ptr->imap_addr[target_map_num].offset = ck_ptr->log_end.offset;
+  ck_ptr->log_end.offset += sizeof(Inode_Map);
+  memmove_imap(ck_ptr, target_map_num, img_ptr, dir_imap);
+
+  /*
+  two imaps may be same
+  but inodes is specific with each inum, so they can't be same.
+  */
+  if (imaps_index_map.map_num != target_map_num) {
+    target_map_num = imaps_index_map.map_num;
+    ck_ptr->imap_addr[target_map_num].block = inode_imap_block;
+    ck_ptr->imap_addr[target_map_num].offset = ck_ptr->log_end.offset;
+    ck_ptr->log_end.offset += sizeof(Inode_Map);
+    memmove_imap(ck_ptr, target_map_num, img_ptr, dir_imap);
+  }
+
+  /*
+  checkpoint
+  */
+  memmove(img_ptr, &checkpoint, sizeof(Checkpoint));
+  sync_file(img_ptr, IMG_SIZE);
+
+  return 0;
 }
 
 // server code
