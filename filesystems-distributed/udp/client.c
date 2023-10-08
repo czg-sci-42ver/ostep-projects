@@ -78,8 +78,8 @@ int main(int argc, char *argv[]) {
   rc = MFS_Creat(inum, REGULAR_FILE, "foo");
   inum++;
   /*
-  -> new root data
-  -> file inode, root inode and related imap
+  10-> new root data
+  11(0xb)-> file inode, pdir (parent dir) inode and related imap
   */
   end_block += 2;
   check_rc(rc);
@@ -88,14 +88,20 @@ int main(int argc, char *argv[]) {
   sprintf(data_to_send, "test second\n");
   rc = MFS_Write(inum, data_to_send, end_block + 1);
   /*
-  -> file data
-  -> file inode and related imap
+  12-> file data
+  13(0xd)-> file inode and related imap
   */
   end_block += 2;
   check_rc(rc);
 
   memset(data_to_send, 0, BSIZE);
   rc = MFS_Read(inum, data_to_send, end_block - 1);
+  check_rc(rc);
+
+  rc = MFS_Lookup(inum - 1, "foo");
+  check_rc(rc);
+
+  rc = MFS_Stat(inum, &file_stat); // /bar/foo
   check_rc(rc);
 
   return 0;

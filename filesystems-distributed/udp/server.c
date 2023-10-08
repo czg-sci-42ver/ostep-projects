@@ -458,7 +458,7 @@ int lookup_lfs(int pinum, char *name, Inode_Map (*imap)[MAP_MAX_SIZE]) {
       if (strncmp(tmp_entry->name, name, strlen(name) + 1) == 0) {
         return tmp_entry->inum;
       }
-      tmp_entry += sizeof(MFS_DirEnt_t);
+      tmp_entry += 1;
     }
   }
   return inum;
