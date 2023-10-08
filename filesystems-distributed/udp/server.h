@@ -12,3 +12,5 @@ void static inline move_inode_update_ck(Inode *file_inode, void *img_ptr,
                                         Checkpoint *ck_ptr);
 Block_Offset_Addr *get_inum_index(uint inum, Map_Num_Index_Map *map,
                                   Inode_Map (*imap)[MAP_MAX_SIZE]);
+static inline Inode_Map *array_ptr_to_elem_ptr(Inode_Map (*imap)[MAP_MAX_SIZE],
+                                               uint index);

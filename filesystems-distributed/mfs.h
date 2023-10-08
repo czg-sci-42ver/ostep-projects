@@ -65,10 +65,11 @@ typedef struct __Inode_Map {
 typedef struct __Map_Num_Entry_Map {
   uint map_end_index;
   /*
-  1. -1 imply not known
+  1. -1 imply only inited but no entry.
   2. not use num which has always offset 1 with the index.
+  3. this is entry index in one imap which points to the last used one.
   */
-  int entry_index; // this is entry num in one imap
+  int entry_index;
 } Map_Num_Entry_Map;
 typedef struct __Map_Num_Index_Map {
   uint map_num;
@@ -98,6 +99,10 @@ typedef enum __UPDATE_PDIR { OVERWRITE = 0, APPEND = 1 } UPDATE_PDIR;
 > note that the inode looks as big as the
 > data block, which generally isn’t the case; in most systems, data blocks
 > are 4 KB in size, whereas an inode is much smaller, around 128 bytes
+
+> Each inode should be simple: a size field (the number of the last byte in the
+file), a type field (regular or directory), > and 14 direct pointers; thus, the
+maximum file size is 14 times the 4KB block size, or 56 KB.
 */
 typedef struct __Inode {
   uint size;

@@ -20,15 +20,16 @@ int main(int argc, char *argv[]) {
   if (rc == -1) {
     exit(EXIT_FAILURE);
   }
-
+  uint inum = ROOT_INUM;
   rc = MFS_Creat(ROOT_INUM, REGULAR_FILE, "foo");
+  inum++;
   if (rc == -1) {
     exit(EXIT_FAILURE);
   }
 
   char data_to_send[BSIZE] = {0};
   sprintf(data_to_send, "test first\n");
-  rc = MFS_Write(2, data_to_send, 10);
+  rc = MFS_Write(inum, data_to_send, 10);
   if (rc == -1) {
     exit(EXIT_FAILURE);
   }

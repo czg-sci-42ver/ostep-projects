@@ -109,10 +109,10 @@ int MFS_Write(int inum, char *buffer, int block) {
   char func_str[20] = "MFS_Write";
   if (ret != -1) {
     printf("client:: got reply in %s [ret:%d contents:(%s)\n", func_str, 0,
-           buffer);
+           read_buf);
     return 0;
   } else {
-    printf("%s: error\n", func_str);
+    printf("%s: error with %s\n", func_str, read_buf);
     return -1;
   }
 }

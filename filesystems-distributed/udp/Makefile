@@ -8,9 +8,10 @@ OBJS   := ${SRCS:c=o}
 PROGS  := ${SRCS:.c=}
 
 LIB=../libmfs.so
-.PHONY: all ${LIB} ${PROGS}
+.PHONY: all
 all: ${LIB} ${PROGS} 
-${LIB}:
+HEADERS=../mfs.h ../mfs_helper.h ./udp.h
+${LIB}: ../mfs.c ./udp.c ${HEADERS}
 	make -C ..
 ORIGIN_LD=${LD_LIBRARY_PATH}
 # export LD_LIBRARY_PATH=${ORIGIN_LD}:
@@ -23,6 +24,6 @@ ${PROGS} : % : %.o Makefile
 clean:
 	rm -f ${PROGS} ${OBJS}
 
-%.o: %.c Makefile
+%.o: %.c Makefile ${LIB}
 	${CC} ${CFLAGS} -c $<
 	$(shell clang-format -i *.[ch] ../*.[ch])

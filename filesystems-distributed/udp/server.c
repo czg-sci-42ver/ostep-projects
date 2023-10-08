@@ -118,7 +118,7 @@ void create_file_update_pdir(int finum, void *img_ptr, char *dir_name,
   create_file(inode_inst);
   MFS_DirEnt_t dir_entry;
   dir_entry.inum = finum;
-  strncpy(dir_entry.name, dir_name, strlen(dir_name) + 1);
+  strncpy(dir_entry.name, dir_name, sizeof(dir_entry.name));
   append_dir_contents(&dir_entry, pinode_ptr, img_ptr, ck_ptr);
 }
 
@@ -139,7 +139,7 @@ void create_dir_update_pdir(int pinum, int dinum, void *img_ptr, char *dir_name,
 
   MFS_DirEnt_t dir_entry;
   dir_entry.inum = dinum;
-  strncpy(dir_entry.name, dir_name, strlen(dir_name) + 1);
+  strncpy(dir_entry.name, dir_name, sizeof(dir_entry.name));
   append_dir_contents(&dir_entry, pinode_ptr, img_ptr, ck_ptr);
 }
 
@@ -180,11 +180,17 @@ void modify_imap_in_ck(Checkpoint *ck_ptr, uint target_map_index) {
   ck_ptr->log_end.offset += sizeof(Inode_Map);
 }
 
+/*
+array pointer
+https://stackoverflow.com/a/20570097/21294350
+*/
 void update_entry_in_imap(Inode_Map (*imap_ptr)[MAP_MAX_SIZE], uint dinum,
                           Map_Num_Entry_Map *num_entry_map, uint block,
                           uint offset) {
-  Inode_Map *single_map_ptr = imap_ptr[num_entry_map->map_end_index];
-  uint entry_index = num_entry_map->entry_index;
+  Inode_Map *single_map_ptr =
+      array_ptr_to_elem_ptr(imap_ptr, num_entry_map->map_end_index);
+  uint entry_index;
+  entry_index = ++num_entry_map->entry_index;
   single_map_ptr->maps[entry_index].inum = dinum;
   single_map_ptr->maps[entry_index].index = entry_index;
   single_map_ptr->inode_addr[entry_index].block = block;
@@ -194,7 +200,7 @@ void update_entry_in_imap(Inode_Map (*imap_ptr)[MAP_MAX_SIZE], uint dinum,
 void update_entry_in_pinum_imap(Map_Num_Index_Map *map,
                                 Inode_Map (*imap_ptr)[MAP_MAX_SIZE], uint dinum,
                                 uint block, uint offset) {
-  Inode_Map *single_map_ptr = imap_ptr[map->map_num];
+  Inode_Map *single_map_ptr = array_ptr_to_elem_ptr(imap_ptr, map->map_num);
   uint entry_num = map->index;
   single_map_ptr->maps[entry_num].inum = dinum;
   single_map_ptr->maps[entry_num].index = entry_num;
@@ -225,9 +231,6 @@ void add_entry_to_imap(Map_Num_Entry_Map *num_entry_map,
   for (int i = 0; i < inode_num; i++) {
     move_inode_update_ck(inode_inst_list[i], img_ptr, ck_ptr);
   }
-  /*
-  https://stackoverflow.com/a/20570097/21294350
-  */
   uint index = num_entry_map->entry_index;
   uint tmp_offset = sizeof(Inode) * inode_num;
   assert(ck_ptr->log_end.offset == tmp_offset);
@@ -295,7 +298,7 @@ void write_checkpoint_and_EndImap(Checkpoint *ck_ptr,
   // ck_ptr->imap_addr[target_map].block = end_block_index;
   // ck_ptr->imap_addr[target_map].offset = sizeof(Inode);
   memmove(img_ptr, ck_ptr, sizeof(Checkpoint));
-  Inode_Map *imap_addr = imap_ptr[0];
+  Inode_Map *imap_addr = array_ptr_to_elem_ptr(imap_ptr, 0);
   memmove_imap(&checkpoint, target_map, img_ptr, imap_addr + target_map);
 }
 
@@ -309,6 +312,10 @@ void static inline sync_file(void *img_ptr, uint len) {
   }
 }
 
+void static inline init_num_entry_map(Map_Num_Entry_Map *num_entry_map) {
+  num_entry_map->entry_index = -1;
+}
+
 void *init_img(FILE *img_stream, Inode_Map (*imap_ptr)[MAP_MAX_SIZE],
                Checkpoint *checkpoint_ptr, Map_Num_Entry_Map *num_entry_map) {
   void *img_ptr = file_mmap(img_stream);
@@ -318,6 +325,7 @@ void *init_img(FILE *img_stream, Inode_Map (*imap_ptr)[MAP_MAX_SIZE],
   // memset(img_ptr, 0, IMG_SIZE);
   Inode dir_inode;
   init_checkpoint(checkpoint_ptr);
+  init_num_entry_map(num_entry_map);
   create_dir(ROOT_INUM, ROOT_INUM, img_ptr, &dir_inode, &imap_global_index,
              checkpoint_ptr);
   int inum_list[1] = {ROOT_INUM};
@@ -367,9 +375,10 @@ void read_img(void *img_ptr, Inode_Map (*imap_ptr)[MAP_MAX_SIZE],
     read_ptr = img_ptr + global_offset;
     assert((void *)read_ptr <=
            img_ptr + BSIZE * imap_end.block + imap_end.offset);
-    memmove(&imap_ptr[imap_global_index.map_end_index++], read_ptr,
-            sizeof(Inode_Map));
+    memmove(array_ptr_to_elem_ptr(imap_ptr, imap_global_index.map_end_index++),
+            read_ptr, sizeof(Inode_Map));
   }
+  imap_global_index.map_end_index--; // because of using the index
   /*
   > and a new piece of the inode map to the end of the log
   assume inode map stored last.
@@ -384,13 +393,14 @@ in the cache in 11/18. So here server -> NFS and LFS.
 2. inum -> inode_addr and index to get the imap related entry.
 */
 Block_Offset_Addr *get_inum_index(uint inum, Map_Num_Index_Map *map,
-                                  Inode_Map (*imap)[MAP_MAX_SIZE]) {
+                                  Inode_Map (*imap_ptr)[MAP_MAX_SIZE]) {
+  Inode_Map *imap = array_ptr_to_elem_ptr(imap_ptr, 0);
   for (int i = 0; i <= imap_global_index.map_end_index; i++) {
     for (int j = 0; j < MAP_ENTRY_SIZE; j++) {
-      if (imap[i]->maps[j].inum == inum) {
+      if (imap[i].maps[j].inum == inum) {
         map->map_num = i;
         map->index = j;
-        return &imap[i]->inode_addr[imap[i]->maps[j].index];
+        return &imap[i].inode_addr[imap[i].maps[j].index];
       }
     }
   }
@@ -611,11 +621,21 @@ int write_lfs(int inum, int block, Inode_Map (*imap)[MAP_MAX_SIZE],
 }
 
 /*
+(Inode_Map *)(imap)+index is also ok.
+*/
+static inline Inode_Map *array_ptr_to_elem_ptr(Inode_Map (*imap)[MAP_MAX_SIZE],
+                                               uint index) {
+  assert(index <= MAP_MAX_SIZE);
+  return &(*imap)[index];
+}
+
+/*
 return ptr pointing to data in the imap.
 */
 Block_Offset_Addr *get_inode_addr(Map_Num_Index_Map *imaps_index_map,
                                   Inode_Map (*imap)[MAP_MAX_SIZE]) {
-  Inode_Map *target_imap = imap[imaps_index_map->map_num];
+  Inode_Map *target_imap =
+      array_ptr_to_elem_ptr(imap, imaps_index_map->map_num);
   Block_Offset_Addr *target_inode_addr =
       target_imap->inode_addr + target_imap->maps[imaps_index_map->index].index;
   return target_inode_addr;
@@ -696,14 +716,18 @@ int search_dir(char *file_name, Inode *pinode_ptr) {
   return -1;
 }
 
-int find_available_inum(Inode_Map (*imap)[MAP_MAX_SIZE]) {
+int find_available_inum(Inode_Map (*imap_ptr)[MAP_MAX_SIZE]) {
   /*
   here assume consecutive, otherwise it is difficult to allocate a new inum
   which has no collision.
   */
+  Inode_Map *imap = array_ptr_to_elem_ptr(imap_ptr, 0);
   for (int i = 0; i <= imap_global_index.map_end_index; i++) {
-    for (int j = 0; j < MAP_ENTRY_SIZE; j++) {
-      if (imap[i]->maps[j].inum == 0 || imap[i]->maps[j].inum == -1) {
+    /*
+    skip the ROOT_INUM
+    */
+    for (int j = 1; j < MAP_ENTRY_SIZE; j++) {
+      if (imap[i].maps[j].inum == 0 || imap[i].maps[j].inum == -1) {
         return i * MAP_ENTRY_SIZE + j;
       }
     }
