@@ -130,7 +130,8 @@ int MFS_Read(int inum, char *buffer, int block) {
            buffer);
     printf("%s: error\n", func_str);
   }
-  assert(UDP_Read_Timeout(sd, &addrRcv, buffer, BUFFER_SIZE) != -1);
+  while (UDP_Read_Timeout(sd, &addrRcv, read_buf, BUFFER_SIZE) == -1) {
+  }
   int ret = atoi(buffer);
   if (ret != -1) {
     return 0;

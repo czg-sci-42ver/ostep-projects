@@ -41,7 +41,7 @@ int MFS_Shutdown();
 */
 typedef unsigned int uint;
 typedef struct __Inum_Index_Map {
-  uint inum;
+  int inum;
   uint index;
 } Inum_Index_Map;
 /*

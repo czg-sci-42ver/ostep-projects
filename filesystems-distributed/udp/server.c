@@ -58,7 +58,7 @@ void *file_mmap(FILE *img_stream) {
 /*
 similar to search_dir
 */
-uint search_invalid_dir_entry(Inode *pinode_ptr, int *invalid_cnt) {
+int search_invalid_dir_entry(Inode *pinode_ptr, int *invalid_cnt) {
   uint offset_loc = 0, ptr_index = 0;
   MFS_DirEnt_t dir_entry;
   uint invalid_cnt_loc = *invalid_cnt;
@@ -89,6 +89,37 @@ uint search_invalid_dir_entry(Inode *pinode_ptr, int *invalid_cnt) {
   return -1;
 }
 
+int search_invalid_imap_entry(Inode_Map *imap_addr, int *invalid_cnt) {
+  uint map_index = 0;
+  uint invalid_cnt_loc = *invalid_cnt;
+  uint check_cnt = 0;
+  if (invalid_cnt_loc == 0) {
+    check_cnt = 1;
+  }
+  /*
+  1. here assume root dir won't be unlinked.
+  2. stop at the not inited entry.
+    Since only imap.maps are unlinked in `unlink_file_lfs`, it is ok to use the
+  block to check whether init. Since the root map is {inum = 0x0,index = 0x0}
+  which is same as not inited one, so not use `maps`.
+  */
+  Inum_Index_Map *tmp_map = NULL;
+  while (imap_addr->inode_addr[map_index].block != 0) {
+    tmp_map = &imap_addr->maps[map_index];
+    assert(tmp_map->index == map_index);
+    if (tmp_map->inum == -1) {
+      if (check_cnt) {
+        invalid_cnt_loc++;
+      } else {
+        return tmp_map->index;
+      }
+    }
+    map_index++;
+  }
+  *invalid_cnt = invalid_cnt_loc;
+  return -1;
+}
+
 /*
 1. must call after create_dir, so size will not be 0.
 2. based on chapter 8/16, although the whole changed dir contents are written to
@@ -104,7 +135,8 @@ UPDATE_PDIR append_dir_contents(MFS_DirEnt_t *dir_entry, Inode *pinode_ptr,
   /*
   here for simplicity, all inits are not dependent on the `reuse_offset`.
   */
-  if (target_offset == -1) {
+  uint reuse_invalid_entry = target_offset != -1;
+  if (!reuse_invalid_entry) {
     target_offset = pinode_ptr->size;
   }
   uint single_imap_offset = target_offset % BSIZE;
@@ -117,7 +149,7 @@ UPDATE_PDIR append_dir_contents(MFS_DirEnt_t *dir_entry, Inode *pinode_ptr,
   /*
   pinode use the new block.
   */
-  if (single_imap_offset == 0 && target_offset == -1) {
+  if (single_imap_offset == 0 && !reuse_invalid_entry) {
     pinode_ptr->data_ptr[++end_block_index] = ck_ptr->log_end.block;
     ret = APPEND;
   } else {
@@ -144,7 +176,9 @@ UPDATE_PDIR append_dir_contents(MFS_DirEnt_t *dir_entry, Inode *pinode_ptr,
                        tmp_ptr, BSIZE);
   }
   tmp_iaddr.offset = single_imap_offset;
-  pinode_ptr->size += sizeof(MFS_DirEnt_t);
+  if (!reuse_invalid_entry) {
+    pinode_ptr->size += sizeof(MFS_DirEnt_t);
+  }
   write_block_offset(dir_entry, mmap_file_ptr, tmp_ptr, sizeof(MFS_DirEnt_t));
   return ret;
 }
@@ -243,15 +277,26 @@ https://stackoverflow.com/a/20570097/21294350
 */
 void update_entry_in_imap(Inode_Map (*imap_ptr)[MAP_MAX_SIZE], uint dinum,
                           Map_Num_Entry_Map *num_entry_map, uint block,
-                          uint offset) {
-  Inode_Map *single_map_ptr =
-      array_ptr_to_elem_ptr(imap_ptr, num_entry_map->map_end_index);
+                          uint offset, Inode_Map **single_map_ptr) {
+  Inode_Map *single_map_ptr_loc = *single_map_ptr;
   uint entry_index;
   entry_index = ++num_entry_map->entry_index;
-  single_map_ptr->maps[entry_index].inum = dinum;
-  single_map_ptr->maps[entry_index].index = entry_index;
-  single_map_ptr->inode_addr[entry_index].block = block;
-  single_map_ptr->inode_addr[entry_index].offset = offset;
+  single_map_ptr_loc->maps[entry_index].inum = dinum;
+  single_map_ptr_loc->maps[entry_index].index = entry_index;
+  single_map_ptr_loc->inode_addr[entry_index].block = block;
+  single_map_ptr_loc->inode_addr[entry_index].offset = offset;
+  *single_map_ptr = single_map_ptr_loc;
+}
+
+void overwrite_entry_in_imap(Inode_Map (*imap_ptr)[MAP_MAX_SIZE], uint dinum,
+                             uint map_index, uint block, uint offset,
+                             Inode_Map **single_map_ptr) {
+  Inode_Map *single_map_ptr_loc = *single_map_ptr;
+  single_map_ptr_loc->maps[map_index].inum = dinum;
+  single_map_ptr_loc->maps[map_index].index = map_index;
+  single_map_ptr_loc->inode_addr[map_index].block = block;
+  single_map_ptr_loc->inode_addr[map_index].offset = offset;
+  *single_map_ptr = single_map_ptr_loc;
 }
 
 void update_entry_in_pinum_imap(Map_Num_Index_Map *map,
@@ -322,8 +367,18 @@ void add_entry_to_imap(Map_Num_Entry_Map *num_entry_map,
   here write the imaps with inode addrs.
   same as inode write order
   */
-  update_entry_in_imap(imap_ptr, inum[0], num_entry_map, ck_ptr->log_end.block,
-                       0);
+  int invalid_cnt = -1;
+  Inode_Map *single_map_ptr_loc =
+      array_ptr_to_elem_ptr(imap_ptr, num_entry_map->map_end_index);
+  int invalid_index =
+      search_invalid_imap_entry(single_map_ptr_loc, &invalid_cnt);
+  if (invalid_index != -1) {
+    overwrite_entry_in_imap(imap_ptr, inum[0], invalid_index,
+                            ck_ptr->log_end.block, 0, &single_map_ptr_loc);
+  } else {
+    update_entry_in_imap(imap_ptr, inum[0], num_entry_map,
+                         ck_ptr->log_end.block, 0, &single_map_ptr_loc);
+  }
   if (inode_num == 2) {
     /*
     see above "pinum_imap first"

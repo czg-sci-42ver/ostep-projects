@@ -33,6 +33,12 @@ int main(int argc, char *argv[]) {
   uint end_block = 2;
 
   uint inum = ROOT_INUM;
+  /*
+  Since the following `rc = MFS_Unlink(ROOT_INUM, "foo");` unlinks the file,
+  when rerun this `MFS_Creat`, the file will be written after the checkpoint log_end,
+  so the following `MFS_Write(inum, data_to_send, end_block + 1);` will throw error 
+  because it writes to one wrong block address.
+  */
   rc = MFS_Creat(ROOT_INUM, REGULAR_FILE, "foo");
   inum++;
   /*
@@ -110,8 +116,9 @@ int main(int argc, char *argv[]) {
   rc = MFS_Unlink(ROOT_INUM, "bar");
 
   /*
-  -> new pdir data block
-  -> pdir inode and imaps related with pdir and the file
+  14(0xe)-> new pdir data block
+  15(0xf)-> pdir inode and imaps related with pdir and the file (maybe only one
+  imap if they are same imap.)
   */
   rc = MFS_Unlink(ROOT_INUM, "foo");
   end_block += 2;
@@ -127,8 +134,8 @@ int main(int argc, char *argv[]) {
   */
   rc = MFS_Creat(ROOT_INUM, REGULAR_FILE, "baz");
   /*
-  14-> new root data
-  15-> file inode, root inode and related imap
+  16(0x10)-> new root data
+  17(0x11)-> file inode, root inode and related imap
   */
   end_block += 2;
   check_rc(rc);
@@ -136,10 +143,22 @@ int main(int argc, char *argv[]) {
   rc = MFS_Lookup(ROOT_INUM, "baz");
   check_rc(rc);
 
+  /*
+  18(0x12)-> new pdir data block
+  19(0x13)-> pdir inode and imaps related with pdir and the file (maybe only one
+  imap if they are same imap.)
+  */
   rc = MFS_Unlink(inum - 1, "foo");
+  end_block += 2;
   check_rc(rc);
 
+  /*
+  20(0x14)-> new pdir data block
+  21(0x15)-> pdir inode and imaps related with pdir and the file (maybe only one
+  imap if they are same imap.)
+  */
   rc = MFS_Unlink(ROOT_INUM, "bar");
+  end_block += 2;
   check_rc(rc);
 
   return 0;
