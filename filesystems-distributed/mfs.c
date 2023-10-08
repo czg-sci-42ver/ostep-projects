@@ -69,7 +69,7 @@ int MFS_Lookup(int pinum, char *name) {
   check_inum(pinum);
   sprintf(message, "Lookup,%d,%s", pinum, name);
   resend_if_fail(message, read_buf);
-  int rc = atoi(message);
+  int rc = atoi(read_buf);
   if (rc < 0) {
     printf("rc %d MFS_Lookup: error\n", rc);
   } else {

@@ -47,10 +47,56 @@ int main(int argc, char *argv[]) {
   check_rc(rc);
 #endif
   rc = MFS_Write(inum, data_to_send, end_block + 1);
+  /*
+  5-> file data
+  6 -> file inode and related imap
+  */
+  end_block += 2;
   check_rc(rc);
 
   memset(data_to_send, 0, BSIZE);
+#ifdef TEST_FAIL_WRITE
+  /*
+  should fail because I write to the consecutive block after Checkpoint->log_end
+  */
   rc = MFS_Read(inum, data_to_send, 10);
   check_rc(rc);
+#endif
+  rc = MFS_Read(inum, data_to_send, end_block - 1);
+  check_rc(rc);
+
+  rc = MFS_Creat(ROOT_INUM, DIRECTORY, "bar");
+  inum++;
+  /*
+  7-> new dir data
+  8 -> root data
+  9 -> new dir inode, root inode and related imap
+  */
+  end_block += 3;
+  check_rc(rc);
+
+  rc = MFS_Creat(inum, REGULAR_FILE, "foo");
+  inum++;
+  /*
+  -> new root data
+  -> file inode, root inode and related imap
+  */
+  end_block += 2;
+  check_rc(rc);
+
+  memset(data_to_send, 0, BSIZE);
+  sprintf(data_to_send, "test second\n");
+  rc = MFS_Write(inum, data_to_send, end_block + 1);
+  /*
+  -> file data
+  -> file inode and related imap
+  */
+  end_block += 2;
+  check_rc(rc);
+
+  memset(data_to_send, 0, BSIZE);
+  rc = MFS_Read(inum, data_to_send, end_block - 1);
+  check_rc(rc);
+
   return 0;
 }

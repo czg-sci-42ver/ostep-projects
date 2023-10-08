@@ -129,7 +129,6 @@ memory addr.
 */
 void create_dir_update_pdir(int pinum, int dinum, void *img_ptr, char *dir_name,
                             Inode *pinode_ptr, Checkpoint *ck_ptr,
-                            Inode_Map (*imap_ptr)[MAP_MAX_SIZE],
                             Map_Num_Entry_Map *num_entry_map,
                             Inode *inode_inst) {
   /*
@@ -150,8 +149,15 @@ void create_dir(int pinum, int dinum, void *img_ptr, Inode *dir_inode,
   memset(dir_inode->data_ptr, 0, sizeof(dir_inode->data_ptr));
   MFS_DirEnt_t dot = {".", dinum};
   MFS_DirEnt_t dot_dot = {"..", pinum};
+  /*
+  always one whole new data block
+  */
+  if (ck_ptr->log_end.offset != 0) {
+    ck_ptr->log_end.block++;
+    ck_ptr->log_end.offset = 0;
+  }
   uint tmp_data_block = ck_ptr->log_end.block;
-  dir_inode->data_ptr[0] = ck_ptr->log_end.block++;
+  dir_inode->data_ptr[0] = ck_ptr->log_end.block++; // mark used
   dir_inode->size = sizeof(MFS_DirEnt_t) * 2;
   dir_inode->type = DIRECTORY;
   memmove(img_ptr + BSIZE * tmp_data_block, &dot, sizeof(MFS_DirEnt_t));
@@ -304,6 +310,8 @@ void write_checkpoint_and_EndImap(Checkpoint *ck_ptr,
 
 void static inline init_checkpoint(Checkpoint *checkpoint_ptr) {
   checkpoint_ptr->log_end.block = 1;
+  checkpoint_ptr->log_end.offset =
+      0; // explicit assignment although static will init 0
 }
 
 void static inline sync_file(void *img_ptr, uint len) {
@@ -801,7 +809,7 @@ int creat_file_lfs(int pinum, char *type, char *name,
     */
     // create_dir(ROOT_INUM,inum,mmap_file_ptr,checkpoint.log_end.block+1);
     create_dir_update_pdir(pinum, inum, mmap_file_ptr, name, &inode_inst,
-                           ck_ptr, imap, num_entry_map, &file_inode);
+                           ck_ptr, num_entry_map, &file_inode);
     creat_update_imap_ck(pinum, inum, &file_inode, &inode_inst, imap, ck_ptr,
                          img_ptr, &imaps_index_map, num_entry_map);
   } else if (strncmp(type, REGULAR_FILE_STR, strlen(REGULAR_FILE_STR)) == 0) {
