@@ -73,7 +73,7 @@ int MFS_Lookup(int pinum, char *name) {
   if (rc < 0) {
     printf("rc %d MFS_Lookup: error\n", rc);
   } else {
-    printf("client:: got reply in MFS_Lookup [ret:%d contents:(%s)\n", 0,
+    printf("client:: got reply in MFS_Lookup [ret:%d contents:(%s)]\n", 0,
            read_buf);
   }
   return rc;
@@ -91,7 +91,7 @@ int MFS_Stat(int inum, MFS_Stat_t *m) {
                   ? REGULAR_FILE
                   : DIRECTORY;
     sprintf(message, "%d,%s", m->size, type_str);
-    printf("client:: got reply in MFS_Stat [ret:%d contents:(%d,%s)\n", 0,
+    printf("client:: got reply in MFS_Stat [ret:%d contents:(%d,%s)]\n", 0,
            m->size, type_str);
     return 0;
   } else {
@@ -108,7 +108,7 @@ int MFS_Write(int inum, char *buffer, int block) {
   int ret = atoi(read_buf);
   char func_str[20] = "MFS_Write";
   if (ret != -1) {
-    printf("client:: got reply in %s [ret:%d contents:(%s)\n", func_str, 0,
+    printf("client:: got reply in %s [ret:%d contents:(%s)]\n", func_str, 0,
            read_buf);
     return 0;
   } else {
@@ -123,17 +123,19 @@ int MFS_Read(int inum, char *buffer, int block) {
   sprintf(message, "Read,%d,%d", inum, block);
   resend_if_fail(message, buffer);
   if (strncmp(buffer, READ_FAILURE_MSG, strlen(READ_FAILURE_MSG)) != 0) {
-    printf("client:: got reply in %s [ret:%d contents:(%s)\n", func_str, 0,
+    printf("client:: got reply in %s [ret:%d contents:(%s)]\n", func_str, 0,
            buffer);
+  } else {
+    printf("client:: got reply in %s [ret:%d error msg:(%s)]\n", func_str, -1,
+           buffer);
+    printf("%s: error\n", func_str);
   }
   assert(UDP_Read_Timeout(sd, &addrRcv, buffer, BUFFER_SIZE) != -1);
   int ret = atoi(buffer);
   if (ret != -1) {
     return 0;
-  } else {
-    printf("%s: error\n", func_str);
-    return -1;
   }
+  return -1;
 }
 
 int MFS_Creat(int pinum, int type, char *name) {
@@ -143,7 +145,7 @@ int MFS_Creat(int pinum, int type, char *name) {
   int ret = atoi(read_buf);
   char func_str[20] = "MFS_Creat";
   if (ret != -1) {
-    printf("client:: got reply in %s [ret:%d contents:(%s)\n", func_str, 0,
+    printf("client:: got reply in %s [ret:%d contents:(%s)]\n", func_str, 0,
            read_buf);
     return 0;
   } else {

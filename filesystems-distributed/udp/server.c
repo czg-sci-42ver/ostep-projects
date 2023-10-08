@@ -524,7 +524,8 @@ void write_data_inode_imap_checkpoint(Block_Offset_Addr *target_inode_block,
                                       Inode_Map (*imap)[MAP_MAX_SIZE],
                                       uint old_block, Checkpoint *ck_ptr,
                                       Map_Num_Index_Map *num_index_map,
-                                      void *img_ptr) {
+                                      void *img_ptr,
+                                      Map_Num_Entry_Map *num_entry_map) {
   uint target_inode_block_num = target_inode_block->block;
   memmove(mmap_file_ptr + BSIZE * (target_inode_block_num - 1), data_buf,
           BSIZE);
@@ -558,7 +559,7 @@ void write_data_inode_imap_checkpoint(Block_Offset_Addr *target_inode_block,
   // add_entry_to_imap(&imap_global_index,imap,inum_list,checkpoint_ptr,img_ptr,dir_inode,1);
   modify_ck(ck_ptr, num_index_map, sizeof(Inode_Map) + sizeof(Inode),
             sizeof(Inode), target_inode_block_num);
-  write_checkpoint_and_EndImap(ck_ptr, &imap_global_index, img_ptr, imap);
+  write_checkpoint_and_EndImap(ck_ptr, num_entry_map, img_ptr, imap);
 }
 
 /*
@@ -566,11 +567,12 @@ void write_data_inode_imap_checkpoint(Block_Offset_Addr *target_inode_block,
 Not show append or overwrite
 */
 int write_lfs(int inum, int block, Inode_Map (*imap)[MAP_MAX_SIZE],
-              void *img_ptr) {
+              void *img_ptr, Map_Num_Entry_Map *num_entry_map) {
   /*
   since only sequential write is ensured,
   so the block doesn't need to be adjacent with the `checkpoint.log_end`
-  But to decrease the external fragmentation, I add the sequential ensure.
+  But to decrease the external fragmentation and avoid the overwrite of the
+  otherwise scattered disk space, I add the sequential ensure.
   */
   int overwrite = 0, target_data_block = checkpoint.log_end.block + 1;
   /*
@@ -590,10 +592,7 @@ int write_lfs(int inum, int block, Inode_Map (*imap)[MAP_MAX_SIZE],
   for (i = 0; inode_inst.data_ptr[i] != 0; i++) {
     if (block == inode_inst.data_ptr[i]) {
       overwrite = 1;
-      /*
-      assume default to next available block if using the chapter 4/16 pattern.
-      */
-      inode_inst.data_ptr[i] = target_data_block; // modify one data block addr
+      break;
     }
   }
   /*
@@ -603,19 +602,36 @@ int write_lfs(int inum, int block, Inode_Map (*imap)[MAP_MAX_SIZE],
   if (i == DIRECT_POINTER_SIZE) {
     return -1;
   }
+  char *block_buf = calloc(BSIZE, 1);
+  UDP_Read(sd, &addr, block_buf, BSIZE);
+  if (overwrite) {
+    char *orig_block_buf = calloc(BSIZE, 1);
+    memmove(orig_block_buf, img_ptr + BSIZE * inode_inst.data_ptr[i], BSIZE);
+    if (strncmp(orig_block_buf, block_buf, BSIZE) == 0) {
+      free(orig_block_buf);
+      return 0; // not overwrite the same data.
+    }
+    free(orig_block_buf);
+    /*
+    assume default to next available block if using the chapter 4/16 pattern.
+    */
+    inode_inst.data_ptr[i] = target_data_block; // modify one data block addr
+  }
+  if (block != target_data_block) {
+    return -1;
+  }
   if (!overwrite) {
     inode_inst.data_ptr[i] = target_data_block; // add one data block
     inode_inst.size += BSIZE;
   }
-  char *block_buf = calloc(BSIZE, 1);
-  UDP_Read(sd, &addr, block_buf, BSIZE);
   Block_Offset_Addr *target_inode_addr = get_inode_addr(&imaps_index_map, imap);
   uint old_block = target_inode_addr->block;
   target_inode_addr->block = target_data_block + 1;
   target_inode_addr->offset = 0;
-  write_data_inode_imap_checkpoint(target_inode_addr, &inode_inst, block_buf,
-                                   imap, old_block, &checkpoint,
-                                   &imaps_index_map, mmap_file_ptr);
+  write_data_inode_imap_checkpoint(
+      target_inode_addr, &inode_inst, block_buf, imap, old_block, &checkpoint,
+      &imaps_index_map, mmap_file_ptr, num_entry_map);
+  free(block_buf);
   sync_file(img_ptr, IMG_SIZE);
   return 0;
 }
@@ -748,12 +764,13 @@ void static inline creat_update_imap_ck(int pinum, int inum, Inode *file_inode,
                                         Inode *inode_inst,
                                         Inode_Map (*imap)[MAP_MAX_SIZE],
                                         Checkpoint *ck_ptr, void *img_ptr,
-                                        Map_Num_Index_Map *imaps_index_map) {
+                                        Map_Num_Index_Map *imaps_index_map,
+                                        Map_Num_Entry_Map *num_entry_map) {
   int inum_list[2] = {inum, pinum};
   Inode *inode_list[2] = {file_inode, inode_inst};
-  add_entry_to_imap(&imap_global_index, imap, inum_list, ck_ptr, img_ptr,
+  add_entry_to_imap(num_entry_map, imap, inum_list, ck_ptr, img_ptr,
                     &(inode_list[0]), 2);
-  write_checkpoint_and_EndImap(ck_ptr, &imap_global_index, img_ptr, imap);
+  write_checkpoint_and_EndImap(ck_ptr, num_entry_map, img_ptr, imap);
   /*
   write pinum_imap
   */
@@ -763,7 +780,7 @@ void static inline creat_update_imap_ck(int pinum, int inum, Inode *file_inode,
 
 int creat_file_lfs(int pinum, char *type, char *name,
                    Inode_Map (*imap)[MAP_MAX_SIZE], Checkpoint *ck_ptr,
-                   void *img_ptr) {
+                   void *img_ptr, Map_Num_Entry_Map *num_entry_map) {
   if (strlen(name) + 1 > NAME_MAX_LEN) {
     return -1;
   }
@@ -784,14 +801,14 @@ int creat_file_lfs(int pinum, char *type, char *name,
     */
     // create_dir(ROOT_INUM,inum,mmap_file_ptr,checkpoint.log_end.block+1);
     create_dir_update_pdir(pinum, inum, mmap_file_ptr, name, &inode_inst,
-                           ck_ptr, imap, &imap_global_index, &file_inode);
+                           ck_ptr, imap, num_entry_map, &file_inode);
     creat_update_imap_ck(pinum, inum, &file_inode, &inode_inst, imap, ck_ptr,
-                         img_ptr, &imaps_index_map);
+                         img_ptr, &imaps_index_map, num_entry_map);
   } else if (strncmp(type, REGULAR_FILE_STR, strlen(REGULAR_FILE_STR)) == 0) {
     create_file_update_pdir(inum, mmap_file_ptr, name, &inode_inst, ck_ptr,
                             &file_inode);
     creat_update_imap_ck(pinum, inum, &file_inode, &inode_inst, imap, ck_ptr,
-                         img_ptr, &imaps_index_map);
+                         img_ptr, &imaps_index_map, num_entry_map);
   }
   sync_file(img_ptr, IMG_SIZE);
   return 0;
@@ -875,7 +892,8 @@ int main(int argc, char *argv[]) {
       sprintf(reply, "need data"); // this is fake msg which is not manipulated
                                    // by the client
       UDP_Write(sd, &addr, reply, BUFFER_SIZE);
-      ret = write_lfs(inum, block, &imap_gbl, mmap_file_ptr);
+      ret =
+          write_lfs(inum, block, &imap_gbl, mmap_file_ptr, &imap_global_index);
       send_ret(reply, ret);
     } else if (strncmp(tmp_str, "Read", strlen("Read") + 1) == 0) {
       inum = atoi(strsep(&sep_ptr, ","));
@@ -896,7 +914,7 @@ int main(int argc, char *argv[]) {
       char *name = strsep(&sep_ptr, ",");
       assert(sep_ptr == NULL);
       ret = creat_file_lfs(pinum, filetype, name, &imap_gbl, &checkpoint,
-                           mmap_file_ptr);
+                           mmap_file_ptr, &imap_global_index);
       send_ret(reply, ret);
     }
   }
