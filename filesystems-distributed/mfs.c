@@ -170,3 +170,18 @@ int MFS_Unlink(int pinum, char *name) {
     return -1;
   }
 }
+
+int MFS_Shutdown() {
+  sprintf(message, "Shutdown");
+  resend_if_fail(message, read_buf);
+  int ret = atoi(read_buf);
+  char func_str[20] = "MFS_Shutdown";
+  if (ret != -1) {
+    printf("client:: got reply in %s [ret:%d contents:(%s)]\n", func_str, 0,
+           read_buf);
+    return 0;
+  } else {
+    printf("%s: error\n", func_str);
+    return -1;
+  }
+}

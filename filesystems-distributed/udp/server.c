@@ -424,10 +424,12 @@ void static inline init_checkpoint(Checkpoint *checkpoint_ptr) {
       0; // explicit assignment although static will init 0
 }
 
-void static inline sync_file(void *img_ptr, uint len) {
+int static inline sync_file(void *img_ptr, uint len) {
   if (msync(img_ptr, len, MS_SYNC) == -1) {
     perror("Could not sync the file to disk");
+    return -1;
   }
+  return 0;
 }
 
 void static inline init_num_entry_map(Map_Num_Entry_Map *num_entry_map) {
@@ -1044,6 +1046,16 @@ int unlink_file_lfs(int pinum, char *name, Inode_Map (*imap)[MAP_MAX_SIZE],
   return 0;
 }
 
+int shutdown_lfs(void *img_ptr, uint retry_time) {
+  while (retry_time && sync_file(img_ptr, IMG_SIZE) == -1) {
+    retry_time--;
+  }
+  if (retry_time == 0) {
+    return -1;
+  }
+  return 0;
+}
+
 // server code
 int main(int argc, char *argv[]) {
   if (argc != 3) {
@@ -1153,6 +1165,11 @@ int main(int argc, char *argv[]) {
       ret = unlink_file_lfs(pinum, name, &imap_gbl, &checkpoint, mmap_file_ptr,
                             &imap_global_index);
       send_ret(reply, ret);
+    } else if (strncmp(tmp_str, "Shutdown", strlen("Shutdown") + 1) == 0) {
+      assert(sep_ptr == NULL);
+      ret = shutdown_lfs(mmap_file_ptr, RETRY_TIMES);
+      send_ret(reply, ret);
+      break;
     }
   }
   if (munmap(mmap_file_ptr, IMG_SIZE) == -1) {

@@ -1,5 +1,6 @@
 #include "../mfs.h"
 #include "../mfs_helper.h"
+#define RETRY_TIMES 10
 void send_ret(char *reply, int ret);
 Block_Offset_Addr *get_inode_addr(Map_Num_Index_Map *imaps_index_map,
                                   Inode_Map (*imap)[MAP_MAX_SIZE]);

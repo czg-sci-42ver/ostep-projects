@@ -133,7 +133,7 @@ int main(int argc, char *argv[]) {
   /*
   1. foo bar ...
   https://en.wikipedia.org/wiki/Metasyntactic_variable#General_usage
-  2. this should use the invalid inum of foo -> 1.
+  2. this should reuse the invalid inum of foo -> 1.
   */
   rc = MFS_Creat(ROOT_INUM, REGULAR_FILE, "baz");
   /*
@@ -147,8 +147,8 @@ int main(int argc, char *argv[]) {
   sprintf(data_to_send, "test third\n");
   rc = MFS_Write(inum, data_to_send, end_block + 1);
   /*
-  12-> file data
-  13(0xd)-> file inode and related imap
+  18(0x12)-> file data
+  19(0x13)-> file inode and related imap
   */
   end_block += 2;
   check_rc(rc);
@@ -161,8 +161,8 @@ int main(int argc, char *argv[]) {
   check_rc(rc);
 
   /*
-  18(0x12)-> new pdir data block
-  19(0x13)-> pdir inode and imaps related with pdir and the file (maybe only one
+  20(0x14)-> new pdir data block
+  21(0x15)-> pdir inode and imaps related with pdir and the file (maybe only one
   imap if they are same imap.)
   */
   rc = MFS_Unlink(inum - 1, "foo");
@@ -170,16 +170,20 @@ int main(int argc, char *argv[]) {
   check_rc(rc);
 
   /*
-  1. 20(0x14)-> new pdir data block
-  21(0x15)-> pdir inode and imaps related with pdir and the file (maybe only one
+  1. 22(0x16)-> new pdir data block
+  23(0x17)-> pdir inode and imaps related with pdir and the file (maybe only one
   imap if they are same imap.)
-  2. See server.c "so pinode size doesn't ..." this doesn't modify pinode size property.
+  2. See server.c "so pinode size doesn't ..." this doesn't modify pinode size
+  property.
   */
   rc = MFS_Unlink(ROOT_INUM, "bar");
   end_block += 2;
   check_rc(rc);
 
   rc = MFS_Stat(ROOT_INUM, &file_stat);
+  check_rc(rc);
+
+  rc = MFS_Shutdown();
   check_rc(rc);
 
   return 0;
