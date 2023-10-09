@@ -70,7 +70,7 @@ int main(int argc, char *argv[]) {
     int bits_per_block = (8 * UFS_BLOCK_SIZE); // remember, there are 8 bits per byte
 
     s.inode_bitmap_addr = 1;
-    s.inode_bitmap_len = num_inodes / bits_per_block;
+    s.inode_bitmap_len = num_inodes / bits_per_block; // block num
     if (num_inodes % bits_per_block != 0)
 	s.inode_bitmap_len++;
 
@@ -127,7 +127,11 @@ int main(int argc, char *argv[]) {
 
     bitmap_t b;
     for (i = 0; i < 1024; i++)
-	b.bits[i] = 0;
+	b.bits[i] = 0; // all init 0
+    /*
+    see the following `itable.inodes[0]` 
+    and `pwrite(fd, &parent, UFS_BLOCK_SIZE, s.data_region_addr * UFS_BLOCK_SIZE)` for how the 1st entry is used.
+    */
     b.bits[0] = 0x1 << 31; // first entry is allocated
     
     rc = pwrite(fd, &b, UFS_BLOCK_SIZE, s.inode_bitmap_addr * UFS_BLOCK_SIZE);
