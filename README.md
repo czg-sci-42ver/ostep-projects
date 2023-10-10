@@ -1,3 +1,13 @@
+### The solutions is based on this [repo](https://github.com/xxyzz/ostep-hw)
+I added
+1. concurrency-mapreduce
+2. filesystems-distributed
+  filesystems-distributed-ufs(similarly)
+3. initial-kv
+4. initial-memcached
+5. initial-xv6-tracer similar to initial-xv6
+
+---
 
 # Projects for an Operating Systems Class
 
@@ -102,5 +112,3 @@ and install the tools you'll need.
 * [Kernel Threads (Basic Implementation)](concurrency-xv6-threads)
 
 ### File Systems
-
-# The solutions is based on this [repo](https://github.com/xxyzz/ostep-hw)
