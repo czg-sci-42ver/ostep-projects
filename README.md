@@ -7,6 +7,8 @@ I added
 4. initial-memcached
 5. initial-xv6-tracer similar to initial-xv6
 
+I didn't finish concurrency-sort _only_ due to I read OSTEP to fill the gap from csapp.
+
 ---
 
 # Projects for an Operating Systems Class
